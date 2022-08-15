@@ -33,54 +33,88 @@ class KalmanFilter:
         self._kalman_gain = {}
         self._prev_t = init_time
 
-    def predict(
+    def run(
         self,
         control_input: np.array,
+        observation: np.array,
         t: datetime = datetime.now(),
+        state_transition_transform: np.array = None,
+        control_transform: np.array = None,
+    ):
+        self._control_input[t] = control_input
+        self._observation[t] = observation
+        self._predict(t, state_transition_transform, control_transform)
+        self._update(t)
+        self._prev_t = t
+
+    def _predict(
+        self,
+        t: datetime = datetime.now(),
+        state_transition_transform: np.array = None,
+        control_transform: np.array = None,
     ) -> None:
         """
         Predict the state and estimate uncertainty
         """
-        self._control_input[t] = control_input
-        self._predict_state(t)
+        self._predict_state(t, state_transition_transform, control_transform)
         self._predict_uncertainty(t)
-        return self._state_pred[t], self._estimate_uncertainty_pred[t]
 
-    def _predict_state(self, t: datetime) -> None:
+    def _predict_state(
+        self,
+        t: datetime,
+        state_transition_transform: np.array = None,
+        control_transform: np.array = None,
+    ) -> None:
         """
         Extrapolate the state of the system at time t
         """
+        state_matrix = (
+            state_transition_transform
+            if state_transition_transform is not None
+            else self._state_transition_transform
+        )
+        control_matrix = (
+            control_transform
+            if control_transform is not None
+            else self._control_transform
+        )
         self._state_pred[t] = (
-            self._state_transition_transform @ self._state[self._prev_t]
-            + self._control_transform @ self._control_input[t]
+            state_matrix @ self._state[self._prev_t]
+            + control_matrix @ self._control_input[t]
         )
 
-    def _predict_uncertainty(self, t: datetime) -> None:
+    def _predict_uncertainty(
+        self,
+        t: datetime,
+        state_transition_transform: np.array = None,
+    ) -> None:
         """
         Extrapolate the uncertainty of the system at time t
         """
-        self._estimate_uncertainty_pred[t] = (
-            self._state_transition_transform
-            @ self._estimate_uncertainty[self._prev_t]
-            @ self._state_transition_transform.T
-            + self.process_noise_covariance
+        state_matrix = (
+            state_transition_transform
+            if state_transition_transform is not None
+            else self._state_transition_transform
+        )
+        self._estimate_uncertainty_pred[t] = np.diag(
+            np.diag(
+                state_matrix @ self._estimate_uncertainty[self._prev_t] @ state_matrix.T
+                + self._process_noise_covariance
+            )
         )
 
-    def update(
+    def _update(
         self,
-        observation: np.array,
         t: datetime = datetime.now(),
     ) -> None:
         """
         Update the state estimate based on a set of observations
         """
-        self._observation[t] = observation
         self._update_kalman_gain(t)
         self._update_estimate(t)
         self._update_estimate_uncertainty(t)
-        self._prev_t = t
 
-    def update_kalman_gain(self, t: datetime) -> None:
+    def _update_kalman_gain(self, t: datetime) -> None:
         self._kalman_gain[t] = (
             self._estimate_uncertainty_pred[t]
             @ self._matrix_transform.T
@@ -92,25 +126,44 @@ class KalmanFilter:
             )
         )
 
-    def update_estimate(self, t: datetime) -> None:
+    def _update_estimate(self, t: datetime) -> None:
         self._state[t] = self._state_pred[t] + self._kalman_gain[t] @ (
             self._observation[t] - self._matrix_transform @ self._state_pred[t]
         )
 
-    def update_estimate_uncertainty(self, t: datetime) -> None:
-        n = self.observation[t].shape[0]
-        self._estimate_uncertainty_pred[t] = (
-            np.eye(n) - self._kalman_gain[t] @ self._matrix_transform
-        ) @ self._estimate_uncertainty_pred[t]
+    def _update_estimate_uncertainty(self, t: datetime) -> None:
+        n = self._observation[t].shape[0]
+        self._estimate_uncertainty[t] = np.diag(
+            np.diag(
+                (np.eye(n) - self._kalman_gain[t] @ self._matrix_transform)
+                @ self._estimate_uncertainty_pred[t]
+            )
+        )
 
-    def get_state(self, t: datetime) -> np.array:
-        return self._state[t]
+    @property
+    def state(self) -> np.array:
+        return self._state[self._prev_t]
 
-    def get_uncertainty(self, t: datetime) -> np.array:
-        return self._estimate_uncertainty[t]
+    @property
+    def uncertainty(self) -> np.array:
+        return self._estimate_uncertainty[self._prev_t]
 
-    def get_state_history(self) -> tuple[datetime, np.array]:
+    @property
+    def predicted_state(self) -> np.array:
+        return self._state_pred[self._prev_t]
+
+    @property
+    def predicted_uncertainty(self) -> np.array:
+        return self._estimate_uncertainty_pred[self._prev_t]
+
+    @property
+    def kalman_gain(self) -> np.array:
+        return self._kalman_gain[self._prev_t]
+
+    @property
+    def state_history(self) -> tuple[datetime, np.array]:
         return self._state.items()
 
-    def get_uncertainty_history(self) -> tuple[datetime, np.array]:
+    @property
+    def uncertainty_history(self) -> tuple[datetime, np.array]:
         return self._estimate_uncertainty.items()

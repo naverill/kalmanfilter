@@ -130,3 +130,5 @@ dmypy.json
 
 # Repo
 *.csv
+*.swp
+*.swo
