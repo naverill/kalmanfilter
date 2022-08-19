@@ -35,14 +35,16 @@ def test_kalman_filter():
 
     t = datetime.now()
     kf = KalmanFilter(
-        init_state=x_0,
-        init_estimate_uncertainty=p_0,
         state_transition_transform=state_transition_transform,
         control_transform=control_transform,
         matrix_transform=matrix_transform,
         process_noise_covariance=process_noise_covariance,
         measurement_uncertainty=measurement_uncertainty,
-        init_time=t,
+    )
+    kf.init_state(
+        state=x_0,
+        estimate_uncertainty=p_0,
+        t=t,
     )
     control_input = np.array(
         [

@@ -10,28 +10,34 @@ class KalmanFilter:
 
     def __init__(
         self,
-        init_state: np.array,
-        init_estimate_uncertainty: np.array,
-        state_transition_transform: np.array,
-        control_transform: np.array,
-        matrix_transform: np.array,
         process_noise_covariance: np.array,
-        measurement_uncertainty: np.array,
-        init_time: datetime = datetime.now(),
+        matrix_transform: np.array,
+        measurement_uncertainty: np.array = None,
+        state_transition_transform: np.array = None,
+        control_transform: np.array = None,
     ):
-        self._state = {init_time: init_state}
-        self._estimate_uncertainty = {init_time: init_estimate_uncertainty}
         self._state_transition_transform = state_transition_transform
         self._control_transform = control_transform
         self._matrix_transform = matrix_transform
         self._process_noise_covariance = process_noise_covariance
         self._measurement_uncertainty = measurement_uncertainty
+        self._state = {}
+        self._estimate_uncertainty = {}
         self._observation = {}
         self._control_input = {}
         self._state_pred = {}
         self._estimate_uncertainty_pred = {}
         self._kalman_gain = {}
-        self._prev_t = init_time
+
+    def init_state(
+        self, 
+        state: np.array, 
+        estimate_uncertainty: np.array, 
+        t: datetime = datetime.now()
+    ):
+        self._state[t] = state
+        self._estimate_uncertainty[t] = estimate_uncertainty
+        self._prev_t = t
 
     def run(
         self,
@@ -40,11 +46,12 @@ class KalmanFilter:
         t: datetime = datetime.now(),
         state_transition_transform: np.array = None,
         control_transform: np.array = None,
+        matrix_uncertainty: np.array = None,
     ):
         self._control_input[t] = control_input
         self._observation[t] = observation
         self._predict(t, state_transition_transform, control_transform)
-        self._update(t)
+        self._update(t, matrix_uncertainty)
         self._prev_t = t
 
     def _predict(
@@ -106,15 +113,22 @@ class KalmanFilter:
     def _update(
         self,
         t: datetime = datetime.now(),
+        matrix_uncertainty: np.array = None,
     ) -> None:
         """
         Update the state estimate based on a set of observations
         """
-        self._update_kalman_gain(t)
+        self._update_kalman_gain(t, matrix_uncertainty)
         self._update_estimate(t)
         self._update_estimate_uncertainty(t)
 
-    def _update_kalman_gain(self, t: datetime) -> None:
+    def _update_kalman_gain(
+        self,
+        t: datetime,
+        matrix_uncertainty: np.array = None,
+    ) -> None:
+        matrix_uncertainty = matrix_uncertainty if matrix_uncertainty \
+            is not None else self._matrix_uncertainty
         self._kalman_gain[t] = (
             self._estimate_uncertainty_pred[t]
             @ self._matrix_transform.T
@@ -122,7 +136,7 @@ class KalmanFilter:
                 self._matrix_transform
                 @ self._estimate_uncertainty_pred[t]
                 @ self._matrix_transform.T
-                + self._measurement_uncertainty
+                + measurement_uncertainty
             )
         )
 
