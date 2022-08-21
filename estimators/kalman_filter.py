@@ -41,7 +41,17 @@ class KalmanFilter:
         self._estimate_uncertainty[t] = estimate_uncertainty
         self._prev_t = t
 
-    def run(
+    def predict(
+        self,
+        control_input: np.array,
+        t: datetime = datetime.now(),
+        state_transition_transform: np.array = None,
+        control_transform: np.array = None,
+    ):
+        self._control_input[t] = control_input
+        self._predict(t, state_transition_transform, control_transform)
+
+    def predict_update(
         self,
         control_input: np.array,
         observation: np.array,

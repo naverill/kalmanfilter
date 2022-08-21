@@ -139,7 +139,7 @@ class Sensor:
         )
 
     def poll(self, timestamp: datetime) -> Measurement:
-        return self._MEASUREMENTS[timestamp]
+        return self._MEASUREMENTS.get(timestamp)
 
     @property
     def covariance(self):

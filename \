@@ -11,7 +11,7 @@ import numpy as np
 import pandas as pd
 import plotly.graph_objs as go
 from scipy import integrate
-from scipy.spatial.transform import Rotation as Rot
+from scipy.spatial.transform import Rotation as R
 
 from estimators.kalman_filter import KalmanFilter
 from estimators.sensors import (
@@ -61,7 +61,7 @@ def process_measurement(reading: str):
 
 
 def generate_environment(file_path):
-    waypoints = {}
+    waypoints = {} 
     sensors = {
         "rotation vector": RotationVector(
             "R1", "RotationVector", "1", "BOSCH", 0.0, 1, 0
@@ -102,17 +102,15 @@ def main():
     process_noise_covariance = np.diag(
         np.hstack([np.diag(accel_sensor.covariance), np.diag(gyro_sensor.covariance)])
     )
-    matrix_transform = np.array(
-        [
-            # x, y, z, vx, vy, vz, ax, ay, az, r, p, y, rb, pb, yb
-            [0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0],
-            [0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0],
-            [0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0],
-            [0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0],
-            [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0],
-            [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0],
-        ]
-    )
+    matrix_transform = np.array([
+        # x, y, z, vx, vy, vz, ax, ay, az, r, p, y, rb, pb, yb
+        [0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0],
+        [0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0],
+        [0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0],
+        [0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0],
+        [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0],
+        [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0],
+    ])
     kf = KalmanFilter(
         matrix_transform=matrix_transform,
         process_noise_covariance=process_noise_covariance,
@@ -134,81 +132,67 @@ def main():
         accel_t = accel_sensor.poll(t)
         mag_t = mag_sensor.poll(t)
         gyro_t = gyro_sensor.poll(t)
+
         print(mag_t)
-
-        # https://escholarship.org/content/qt5rs5t0sf/qt5rs5t0sf_noSplash_e1588dedf177d86a3652374bc997314f.pdf
-
-        r = np.atan2(accel_t.y, np.sqrt(accel_t.x**2 + accel_t.z**2))
-        p = np.atan2(accel_t.x, np.sqrt(np.sqrt(accel_t.y**2 + accel_t.z**2)))
-        observation = [accel_t.x, accel_t.y, accel_t.z]
+        r = np.atan2(np.sqrt(accel_t.z**2 + accel_t.z**2), accel_t.z)
+        p = np.atan2(np.sqrt(np.sqrt(accel_t.y**2 + accel_t.z**2, accel_t.z**2)))
+        observation = [accel_t.x, accel_t.y, accel_t.z, ]
         state_transition = np.array(
             [
-                # x  y   z   vx  vy  vz  ax  ay  az  r   p   y   rb  pb  yb
-                [1, 0, 0, dt, 0, 0, 0.5 * dt**2, 0, 0, 0, 0, 0, 0, 0, 0],  # x
-                [0, 1, 0, 0, dt, 0, 0, 0.5 * dt**2, 0, 0, 0, 0, 0, 0, 0],  # y
-                [0, 0, 1, 0, 0, dt, 0, 0, 0, 0.5 * dt**2, 0, 0, 0, 0, 0],  # z
-                [0, 0, 0, 1, 0, 0, dt, 0, 0, 0, 0, 0, 0, 0, 0],  # vx
-                [0, 0, 0, 0, 1, 0, 0, dt, 0, 0, 0, 0, 0, 0, 0],  # vy
-                [0, 0, 0, 0, 0, 1, 0, 0, dt, 0, 0, 0, 0, 0, 0],  # vz
-                [0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0],  # ax
-                [0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0],  # ay
-                [0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0],  # az
-                [0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, -dt, 0, 0],  # r
-                [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, -dt, 0],  # p
-                [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, -dt],  # y
-                [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0],  # rb
-                [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0],  # pb
-                [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1],  # yb
+               # x  y   z   vx  vy  vz  ax  ay  az  r   p   y   rb  pb  yb
+                [1, 0,  0,  dt, 0,  0,  0.5 * dt**2,0, 0, 0, 0, 0, 0, 0, 0],        # x
+                [0, 1,  0,  0,  dt, 0,  0, 0.5 * dt**2,0,  0,  0,  0,  0,   0,  0], # y
+                [0, 0,  1,  0,  0,  dt, 0, 0, 0, 0.5 * dt**2, 0, 0, 0, 0, 0],       # z
+                [0, 0,  0,  1,  0,  0,  dt, 0, 0,  0,  0,  0, 0, 0, 0],              # vx
+                [0, 0,  0,  0,  1,  0,  0, dt, 0,  0,  0,  0, 0, 0, 0],              # vy
+                [0, 0,  0,  0,  0,  1,  0, 0, dt,  0,  0,  0, 0, 0, 0],              # vz
+                [0, 0,  0,  0,  0,  0,  1, 0, 0,  0,  0,  0, 0, 0, 0],              # ax
+                [0, 0,  0,  0,  0,  0,  0, 1, 0,  0,  0,  0, 0, 0, 0],              # ay
+                [0, 0,  0,  0,  0,  0,  0, 0, 1,  0,  0,  0, 0, 0, 0],              # az
+                [0, 0,  0,  0,  0,  0, 0,  0,  0, 1,  0,  0, -dt, 0,  0],                     # r
+                [0, 0,  0,  0,  0,  0, 0,  0,  0, 0,  1,  0, 0, -dt, 0],                             # p
+                [0, 0,  0,  0,  0,  0, 0,  0,  0, 0,  0,  1, 0, 0, -dt],                             # y
+                [0, 0,  0,  0,  0,  0, 0,  0,  0, 0,  0,  0, 1, 0, 0],                               # rb
+                [0, 0,  0,  0,  0,  0,0,  0,  0, 0,  0,  0, 0, 1, 0],                               # pb
+                [0, 0,  0,  0,  0,  0, 0,  0,  0, 0,  0,  0, 0, 0, 1],                               # yb
             ]
         )
         control_transform = np.array(
             [
-                # dr      dp      dy
-                [0, 0, 0],  # x
-                [0, 0, 0],  # y
-                [0, 0, 0],  # z
-                [0, 0, 0],  # vx
-                [0, 0, 0],  # vy
-                [0, 0, 0],  # vz
-                [0, 0, 0],  # ax
-                [0, 0, 0],  # ay
-                [0, 0, 0],  # az
-                [dt, 0, 0],  # r
-                [0, dt, 0],  # p
-                [0, 0, dt],  # y
-                [0, 0, 0],  # rb
-                [0, 0, 0],  # pb
-                [0, 0, 0],  # yb
+                # ax           ay         az     dr      dp      dy
+                [0.5 * dt**2, 0, 0, 0, 0, 0],                       # x
+                [0, 0.5 * dt**2, 0, 0, 0, 0],                       # y 
+                [0, 0, 0.5 * dt**2, 0, 0, 0],                       # z
+                [dt, 0, 0, 0, 0, 0],                                # vx
+                [0, dt, 0, 0, 0, 0],                                # vy
+                [0, 0, dt, 0, 0, 0],                                # vz
+                [0, 0, 0, dt, 0, 0],                                # r
+                [0, 0, 0, 0, dt, 0],                                # p
+                [0, 0, 0, 0, 0, dt],                                # y
+                [0, 0, 0, 0, 0, 0],                                 # rb
+                [0, 0, 0, 0, 0, 0],                                 # pb
+                [0, 0, 0, 0, 0, 0],                                 # yb
             ]
         )
-        # control vector is  euler angle velocities of the IMU in world frame
-        # https://calhoun.nps.edu/bitstream/handle/10945/34427/McGhee_bachmann_zyda_rigid_2000.pdf?sequence=1
-        R = np.array(
-            [
-                [1, np.cos(p) * np.sin(r), np.tan(p) * np.cos(r)],
-                [0, np.cos(r), -np.sin(r)],
-                [0, np.sin(p) / np.cos(r), np.cos(r) / np.sin(p)],
-            ]
-        )
-        print(R)
-        control_input = R @ np.array([gyro_t.x, gyro_t.y, gyro_t.z]).reshape(-1, 1)
+        control_input = np.array(
+            [accel_t.x, accel_t.y, accel_t.z, gyro_t.x, gyro_t.y, gyro_t.z]
+        ).reshape(-1, 1)
+        acc_error = accel_sensor.maximum_range
         matrix_uncertainty = np.array(
             [
-                [accel_sensor.maximum_range, 0, 0, 0, 0, 0],
-                [0, accel_sensor.maximum_range, 0, 0, 0, 0],
-                [0, 0, accel_sensor.maximum_range, 0, 0, 0],
-                [0, 0, 0, gyro_sensor.maximum_range, 0, 0],
-                [0, 0, 0, 0, gyro_sensor.maximum_range, 0],
-                [0, 0, 0, 0, 0, gyro_sensor.maximum_range],
+                [acc_error, 0, 0, 0, 0, 0],
+                [0, acc_error, 0, 0, 0, 0],
+                [0, 0, acc_error, 0, 0, 0],
+                [0, 0, 0, np.cos(p), 0, -np.cos(r) * np.cos(p)],
+                [0, 0, 0, 0, 1, np.sin(r)],
+                [0, 0, 0, np.sin(r), 0, np.cos(r) * np.cos(p)],
             ]
         )
         kf.predict(
-            control_input=control_input,
-            control_transform=control_transform,
-            matrix_uncertainty=matrix_uncertainty,
-            observation=observation,
+            control_input=control_input, 
+            control_transform=control_transform, 
+            matrix_uncertainty
         )
-        print(state_transition)
 
 
 # EKF implementation
