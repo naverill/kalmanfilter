@@ -2,6 +2,8 @@ from datetime import datetime
 
 import numpy as np
 
+from .sensors import Measurement
+
 
 class KalmanFilter:
     """
@@ -21,19 +23,19 @@ class KalmanFilter:
         self._matrix_transform = matrix_transform
         self._process_noise_covariance = process_noise_covariance
         self._measurement_uncertainty = measurement_uncertainty
-        self._state = {}
-        self._estimate_uncertainty = {}
-        self._observation = {}
-        self._control_input = {}
-        self._state_pred = {}
-        self._estimate_uncertainty_pred = {}
-        self._kalman_gain = {}
+        self._state: dict[datetime, np.array] = {}
+        self._estimate_uncertainty: dict[datetime, np.array] = {}
+        self._observation: dict[datetime, np.array] = {}
+        self._control_input: dict[datetime, np.array] = {}
+        self._state_pred: dict[datetime, np.array] = {}
+        self._estimate_uncertainty_pred: dict[datetime, np.array] = {}
+        self._kalman_gain: dict[datetime, np.array] = {}
 
     def init_state(
-        self, 
-        state: np.array, 
-        estimate_uncertainty: np.array, 
-        t: datetime = datetime.now()
+        self,
+        state: np.array,
+        estimate_uncertainty: np.array,
+        t: datetime = datetime.now(),
     ):
         self._state[t] = state
         self._estimate_uncertainty[t] = estimate_uncertainty
@@ -113,22 +115,26 @@ class KalmanFilter:
     def _update(
         self,
         t: datetime = datetime.now(),
-        matrix_uncertainty: np.array = None,
+        measurement_uncertainty: np.array = None,
     ) -> None:
         """
         Update the state estimate based on a set of observations
         """
-        self._update_kalman_gain(t, matrix_uncertainty)
+        self._update_kalman_gain(t, measurement_uncertainty)
         self._update_estimate(t)
         self._update_estimate_uncertainty(t)
 
     def _update_kalman_gain(
         self,
         t: datetime,
-        matrix_uncertainty: np.array = None,
+        measurement_uncertainty: np.array = None,
     ) -> None:
-        matrix_uncertainty = matrix_uncertainty if matrix_uncertainty \
-            is not None else self._matrix_uncertainty
+        measurement_uncertainty = (
+            measurement_uncertainty
+            if measurement_uncertainty is not None
+            else self._measurement_uncertainty
+        )
+
         self._kalman_gain[t] = (
             self._estimate_uncertainty_pred[t]
             @ self._matrix_transform.T

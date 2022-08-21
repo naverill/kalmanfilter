@@ -1,6 +1,8 @@
 from datetime import datetime
 from math import inf
 
+import numpy as np
+
 
 class Measurement:
     def __init__(
@@ -18,15 +20,15 @@ class Measurement:
 
     @property
     def x(self) -> float:
-        self._x
+        return self._x
 
     @property
     def y(self) -> float:
-        self._y
+        return self._y
 
     @property
     def z(self) -> float:
-        self._z
+        return self._z
 
     @property
     def accuracy(self) -> int:
@@ -61,15 +63,15 @@ class MeasurementUncalibrated(Measurement):
 
     @property
     def x_corrected(self) -> float:
-        self._x_corrected
+        return self._x_corrected
 
     @property
     def y_corrected(self) -> float:
-        self._y_corrected
+        return self._y_corrected
 
     @property
     def z_corrected(self) -> float:
-        self._z_corrected
+        return self._z_corrected
 
     @property
     def matrix_corrected(self) -> np.array:
@@ -82,9 +84,7 @@ class MeasurementUncalibrated(Measurement):
     @property
     def matrix_full(self) -> np.array:
         if self._matrix_full is None:
-            self._matrix_full = np.vstack(
-                [self.matrix, self.matrix_corrected]
-            )
+            self._matrix_full = np.vstack([self.matrix, self.matrix_corrected])
         return self._matrix_full
 
 
@@ -212,6 +212,7 @@ class Accelerometer(Sensor):
     y: Acceleration force along the y axis (including gravity) (m/s^2)
     z: Acceleration force along the z axis (including gravity) (m/s^2)
     """
+
     pass
 
 
@@ -227,6 +228,7 @@ class AccelerometerUncalibrated(Accelerometer, SensorUncalibrated):
     z_corrected: acceleration along the Z axis with estimated bias
         compensation  (m/s^2)
     """
+
     pass
 
 
@@ -236,6 +238,7 @@ class Gyroscope(Sensor):
     y: Rate of rotation around the y axis (rad/s)
     z: Rate of rotation around the z axis (rad/s)
     """
+
     pass
 
 
@@ -251,6 +254,7 @@ class GyroscopeUncalibrated(Gyroscope, SensorUncalibrated):
     y_corrected: Estimated drift around the y axis (rad/s)
     z_corrected: Estimated drift around the z axis (rad/s)
     """
+
     pass
 
 
@@ -260,6 +264,7 @@ class Magnetometer(Sensor):
     y: Geomagnetic field strength along the y axis (μT)
     z: Geomagnetic field strength along the z axis (μT)
     """
+
     pass
 
 
@@ -275,6 +280,7 @@ class MagnetometerUncalibrated(Magnetometer, SensorUncalibrated):
     y_corrected: Iron bias estimation along the x axis (μT)
     z_corrected: Iron bias estimation along the x axis (μT)
     """
+
     pass
 
 
@@ -284,4 +290,5 @@ class RotationVector(Sensor):
     y: Rotation vector component along the y axis (y * sin(θ/2))
     z: Rotation vector component along the z axis (z * sin(θ/2)).
     """
+
     pass

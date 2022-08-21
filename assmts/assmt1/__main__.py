@@ -92,80 +92,91 @@ def main():
         f"{ABS_PATH}/../../data/5e15730aa280850006f3d005.txt"
     )
     start_pos = waypoints[0]
-    measurement_matrix = np.array([
-        [1, 0, 0, 0, 0, 0],
-        [0, 1, 0, 0, 0, 0],
-        [0, 0, 1, 0, 0, 0],
-    ])
+
+    accel_sensor = sensors["Accelerometer"]
+    mag_sensor = sensors["Magnetometer"]
+    gyro_sensor = sensors["Gyroscope"]
+
+    process_noise_covariance = np.diag(
+        np.hstack([np.diag(accel_sensor.covariance), np.diag(gyro_sensor.covariance)])
+    )
+    matrix_transform = np.eye(process_noise_covariance.shape[0])
     kf = KalmanFilter(
         matrix_transform=matrix_transform,
         process_noise_covariance=process_noise_covariance,
-        measurement_uncertainty=measurement_uncertainty
     )
 
     # state = [x, y, z, vx, vy, vz, r, p, y, rb, pb, yb]
     init_state = np.array(
-        [start_pos.x, start_point.y, start_point.z, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+        [start_pos.x, start_pos.y, start_pos.z, 0, 0, 0, 0, 0, 0, 0, 0, 0]
     ).reshape(-1, 1)
 
     kf.init_state(
-       t=time,
-       state=init_state,
-       estimate_uncertainty
+        t=time,
+        state=init_state,
+        # estimate_uncertainty=estimate_uncertainty
     )
 
-    accel_sensor = "Accelerometer"
-    mag_sensor = "Magnetometer"
-    gyro_sensor = "Gyroscope"
     for i, t in time:
-        if i = 0:
-            continue
         dt = (t - time[i - 1]).total_seconds()
 
-        accel = sensors[accel_sensor].poll(t)
-        mag = sensors[mag_sensor].poll(t)
-        gyro = sensors[gyro_sensor].poll(t)
+        accel_t = accel_sensor.poll(t)
+        mag_t = mag_sensor.poll(t)
+        gyro_t = gyro_sensor.poll(t)
 
-        r = np.atan2(np.sqrt(accel.z**2 + accel.z**2), accel.z) 
-        p = np.atan2(np.sqrt(np.sqrt(accel.y**2 + accel.z**2, a.z**2))) 
-        state_transition = np.array([
-            #x  y   z   vx  vy  vz  r   p   y   r_b p_b y_b
-            [1, 0,  0,  dt, 0,  0,  0,  0,  0,  0,  0,  0],
-            [0, 1,  0,  0,  dt, 0,  0,  0,  0,  0,  0,  0],
-            [0, 0,  1,  0,  0,  dt, 0,  0,  0,  0,  0,  0],
-            [0, 0,  0,  1,  0,  0,  0,  0,  0,  0,  0,  0],
-            [0, 0,  0,  0,  1,  0,  0,  0,  0,  0,  0,  0]
-            [0, 0,  0,  0,  0,  1,  0,  0,  0,  0,  0,  0]
-            [0, 0,  0,  0,  0,  0,  1,  0,  0,  -dt,0,  0]
-            [0, 0,  0,  0,  0,  0,  0,  1,  0,  0,  -dt,0]
-            [0, 0,  0,  0,  0,  0,  0,  0,  1,  0,  0,  -dt]
-            [0, 0,  0,  0,  0,  0,  0,  0,  0,  1,  0,  0]
-            [0, 0,  0,  0,  0,  0,  0,  0,  0,  0,  1,  0]
-            [0, 0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  1]
-        ])
-        control_transition = np.array([
-            #ax           ay         az     dr      dp      dy       
-            [0.5 * dt**2,0,          0,     0,      0,      0],
-            [0,          0.5 * dt**2,0,     0,      0,      0],
-            [0,          0,          0.5 * dt,      0,      0], 
-            [dt,         0,          0,     0,      0,      0],
-            [0,          dt,         0,     0,      0,      0],
-            [0,          0,          dt,    0,      0,      0]
-            [0,          0,          0,     dt,     0,      0]
-            [0,          0,          0,     0,      dt,     0]
-            [0,          0,          0,     0,      0,      dt]
-            [0,          0,          0,     0,      0,      0]
-            [0,          0,          0,     0,      0,      0]
-            [0,          0,          0,     0,      0,      0]
-        ])
-        matrix_uncertainty = np.array([
-            [sensors[accel_sensor.maximum_range, 0, 0, 0]]
-            [0, sensors[accel_sensor.maximum_range, 0, 0, 0]]
-            [0, 0, sensors[accel_sensor.maximum_range, 0, 0, 0]]
-            [0, 0, 0, np.cos(p), 0, -np.cos(r)*np.cos(p)]]
-            [0, 0, 0, 0, 1, np.sin(r)]]
-            [0, 0, 0, np.sin(r), 0, np.cos(r) * np.cos(p)]]
-        ])
+        print(mag_t)
+        r = np.atan2(np.sqrt(accel_t.z**2 + accel_t.z**2), accel_t.z)
+        p = np.atan2(np.sqrt(np.sqrt(accel_t.y**2 + accel_t.z**2, accel_t.z**2)))
+        state_transition = np.array(
+            [
+                # x  y   z   vx  vy  vz  r   p   y   r_b p_b y_b
+                [1, 0, 0, dt, 0, 0, 0, 0, 0, 0, 0, 0],
+                [0, 1, 0, 0, dt, 0, 0, 0, 0, 0, 0, 0],
+                [0, 0, 1, 0, 0, dt, 0, 0, 0, 0, 0, 0],
+                [0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0],
+                [0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0],
+                [0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0],
+                [0, 0, 0, 0, 0, 0, 1, 0, 0, -dt, 0, 0],
+                [0, 0, 0, 0, 0, 0, 0, 1, 0, 0, -dt, 0],
+                [0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, -dt],
+                [0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0],
+                [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0],
+                [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1],
+            ]
+        )
+        print(state_transition)
+        control_transition = np.array(
+            [
+                # ax           ay         az     dr      dp      dy
+                [0.5 * dt**2, 0, 0, 0, 0, 0],
+                [0, 0.5 * dt**2, 0, 0, 0, 0],
+                [0, 0, 0.5 * dt, 0, 0],
+                [dt, 0, 0, 0, 0, 0],
+                [0, dt, 0, 0, 0, 0],
+                [0, 0, dt, 0, 0, 0],
+                [0, 0, 0, dt, 0, 0],
+                [0, 0, 0, 0, dt, 0],
+                [0, 0, 0, 0, 0, dt],
+                [0, 0, 0, 0, 0, 0],
+                [0, 0, 0, 0, 0, 0],
+                [0, 0, 0, 0, 0, 0],
+            ]
+        )
+        acc_error = accel_sensor.maximum_range
+        matrix_uncertainty = np.array(
+            [
+                [acc_error, 0, 0, 0, 0, 0],
+                [0, acc_error, 0, 0, 0, 0],
+                [0, 0, acc_error, 0, 0, 0],
+                [0, 0, 0, np.cos(p), 0, -np.cos(r) * np.cos(p)],
+                [0, 0, 0, 0, 1, np.sin(r)],
+                [0, 0, 0, np.sin(r), 0, np.cos(r) * np.cos(p)],
+            ]
+        )
+        control_input = np.array(
+            [accel_t.x, accel_t.y, accel_t.z, gyro_t.x, gyro_t.y, gyro_t.z]
+        ).reshape(-1, 1)
+        kf.run(control_input, control_transition, matrix_uncertainty)
 
 
 # EKF implementation
@@ -180,9 +191,9 @@ def main():
 
 # for t in range(n_samples):
 #    r = R.from_quat(Q[t])
-    # Getting a Rotation Matrix from the Quaternions
+# Getting a Rotation Matrix from the Quaternions
 #    new_acce[t] = np.matmul(r.as_matrix().T,sample_data.acce[t][1:4])
-    # matmul Rotation Matrix Transpose to orignal Acceleration to produce the clean linear acceleration
+# matmul Rotation Matrix Transpose to orignal Acceleration to produce the clean linear acceleration
 
 # vel_x = integrate.cumtrapz(new_acce[:,0], time_, initial=0)
 # vel_y = integrate.cumtrapz(new_acce[:,1], time_, initial=0)
