@@ -145,7 +145,7 @@ class Sensor:
     def covariance(self):
         if self._covariance is None:
             self._covariance = np.cov(
-                np.hstack([m.matrix for m in self._MEASUREMENTS]).T
+                np.hstack([m.matrix for m in self._MEASUREMENTS.values()]).T
             )
         return self._covariance
 
@@ -193,7 +193,7 @@ class SensorUncalibrated(Sensor):
     def covariance_corrected(self):
         if self._covariance_corrected is None:
             self._covariance_corrected = np.cov(
-                np.hstack([m.matrix_corrected for m in self._MEASUREMENTS]).T
+                np.hstack([m.matrix_corrected for m in self._MEASUREMENTS.values()]).T
             )
         return self._covariance_corrected
 
@@ -201,7 +201,7 @@ class SensorUncalibrated(Sensor):
     def covariance_full(self):
         if self._covariance_full is None:
             self._covariance_full = np.cov(
-                np.hstack([m.matrix_full for m in self._MEASUREMENTS]).T
+                np.hstack([m.matrix_full for m in self._MEASUREMENTS.values()]).T
             )
         return self._covariance_full
 

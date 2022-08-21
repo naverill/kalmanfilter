@@ -41,29 +41,19 @@ class KalmanFilter:
         self._estimate_uncertainty[t] = estimate_uncertainty
         self._prev_t = t
 
-    def predict(
-        self,
-        control_input: np.array,
-        t: datetime = datetime.now(),
-        state_transition_transform: np.array = None,
-        control_transform: np.array = None,
-    ):
-        self._control_input[t] = control_input
-        self._predict(t, state_transition_transform, control_transform)
-
-    def predict_update(
+    def run(
         self,
         control_input: np.array,
         observation: np.array,
         t: datetime = datetime.now(),
         state_transition_transform: np.array = None,
         control_transform: np.array = None,
-        matrix_uncertainty: np.array = None,
+        measurement_uncertainty: np.array = None,
     ):
         self._control_input[t] = control_input
         self._observation[t] = observation
         self._predict(t, state_transition_transform, control_transform)
-        self._update(t, matrix_uncertainty)
+        self._update(t, measurement_uncertainty)
         self._prev_t = t
 
     def _predict(
@@ -76,7 +66,7 @@ class KalmanFilter:
         Predict the state and estimate uncertainty
         """
         self._predict_state(t, state_transition_transform, control_transform)
-        self._predict_uncertainty(t)
+        self._predict_uncertainty(t, state_transition_transform)
 
     def _predict_state(
         self,
@@ -114,6 +104,11 @@ class KalmanFilter:
             state_transition_transform
             if state_transition_transform is not None
             else self._state_transition_transform
+        )
+        print(
+            state_matrix.shape,
+            self._estimate_uncertainty[self._prev_t].shape,
+            self._process_noise_covariance.shape,
         )
         self._estimate_uncertainty_pred[t] = np.diag(
             np.diag(

@@ -91,11 +91,10 @@ def main():
     waypoints, time, sensors = generate_environment(
         f"{ABS_PATH}/../../data/5e15730aa280850006f3d005.txt"
     )
-    start_pos = waypoints[0]
+    start_pos = waypoints[time[0]]
 
-    accel_sensor = sensors["Accelerometer"]
-    mag_sensor = sensors["Magnetometer"]
-    gyro_sensor = sensors["Gyroscope"]
+    accel_sensor = sensors["accelerometer"]
+    gyro_sensor = sensors["gyroscope"]
 
     # state = [x, y, z, vx, vy, vz, ax, ay, az, r, p, y, rb, pb, yb]
     # observation = [ax, ay, ax, r, p, y]
@@ -104,13 +103,10 @@ def main():
     )
     matrix_transform = np.array(
         [
-            # x, y, z, vx, vy, vz, ax, ay, az, r, p, y, rb, pb, yb
-            [0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0],
-            [0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0],
-            [0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0],
-            [0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0],
-            [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0],
-            [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0],
+            # x, y, z, vx, vy, vz, ax, ay, az, r, p, y
+            [0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0],
+            [0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0],
+            [0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0],
         ]
     )
     kf = KalmanFilter(
@@ -122,43 +118,39 @@ def main():
         [start_pos.x, start_pos.y, start_pos.z, 0, 0, 0, 0, 0, 0, 0, 0, 0]
     ).reshape(-1, 1)
 
+    estimate_uncertainty = np.random.normal(size=init_state.shape)
     kf.init_state(
-        t=time,
-        state=init_state,
-        # estimate_uncertainty=estimate_uncertainty
+        t=time[0], state=init_state, estimate_uncertainty=estimate_uncertainty
     )
 
-    for i, t in time:
+    for i, t in enumerate(time):
         dt = (t - time[i - 1]).total_seconds()
 
         accel_t = accel_sensor.poll(t)
-        mag_t = mag_sensor.poll(t)
         gyro_t = gyro_sensor.poll(t)
-        print(mag_t)
+        if not accel_t or not gyro_t:
+            continue
 
         # https://escholarship.org/content/qt5rs5t0sf/qt5rs5t0sf_noSplash_e1588dedf177d86a3652374bc997314f.pdf
 
-        r = np.atan2(accel_t.y, np.sqrt(accel_t.x**2 + accel_t.z**2))
-        p = np.atan2(accel_t.x, np.sqrt(np.sqrt(accel_t.y**2 + accel_t.z**2)))
+        r = np.arctan2(accel_t.y, np.sqrt(accel_t.x**2 + accel_t.z**2))
+        p = np.arctan2(accel_t.x, np.sqrt(np.sqrt(accel_t.y**2 + accel_t.z**2)))
         observation = [accel_t.x, accel_t.y, accel_t.z]
         state_transition = np.array(
             [
-                # x  y   z   vx  vy  vz  ax  ay  az  r   p   y   rb  pb  yb
-                [1, 0, 0, dt, 0, 0, 0.5 * dt**2, 0, 0, 0, 0, 0, 0, 0, 0],  # x
-                [0, 1, 0, 0, dt, 0, 0, 0.5 * dt**2, 0, 0, 0, 0, 0, 0, 0],  # y
-                [0, 0, 1, 0, 0, dt, 0, 0, 0, 0.5 * dt**2, 0, 0, 0, 0, 0],  # z
-                [0, 0, 0, 1, 0, 0, dt, 0, 0, 0, 0, 0, 0, 0, 0],  # vx
-                [0, 0, 0, 0, 1, 0, 0, dt, 0, 0, 0, 0, 0, 0, 0],  # vy
-                [0, 0, 0, 0, 0, 1, 0, 0, dt, 0, 0, 0, 0, 0, 0],  # vz
-                [0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0],  # ax
-                [0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0],  # ay
-                [0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0],  # az
-                [0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, -dt, 0, 0],  # r
-                [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, -dt, 0],  # p
-                [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, -dt],  # y
-                [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0],  # rb
-                [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0],  # pb
-                [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1],  # yb
+                # x  y  z   vx  vy  vz  ax  ay  az  r   p   y
+                [1, 0, 0, dt, 0, 0, 0.5 * dt**2, 0, 0, 0, 0, 0],  # x
+                [0, 1, 0, 0, dt, 0, 0, 0.5 * dt**2, 0, 0, 0, 0],  # y
+                [0, 0, 1, 0, 0, dt, 0, 0, 0, 0.5 * dt**2, 0, 0],  # z
+                [0, 0, 0, 1, 0, 0, dt, 0, 0, 0, 0, 0],  # vx
+                [0, 0, 0, 0, 1, 0, 0, dt, 0, 0, 0, 0],  # vy
+                [0, 0, 0, 0, 0, 1, 0, 0, dt, 0, 0, 0],  # vz
+                [0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0],  # ax
+                [0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0],  # ay
+                [0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0],  # az
+                [0, 0, 0, 0, 0, 0, 1, 0, 0, -dt, 0, 0],  # r
+                [0, 0, 0, 0, 0, 0, 0, 1, 0, 0, -dt, 0],  # p
+                [0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, -dt],  # y
             ]
         )
         control_transform = np.array(
@@ -176,9 +168,6 @@ def main():
                 [dt, 0, 0],  # r
                 [0, dt, 0],  # p
                 [0, 0, dt],  # y
-                [0, 0, 0],  # rb
-                [0, 0, 0],  # pb
-                [0, 0, 0],  # yb
             ]
         )
         # control vector is  euler angle velocities of the IMU in world frame
@@ -190,9 +179,8 @@ def main():
                 [0, np.sin(p) / np.cos(r), np.cos(r) / np.sin(p)],
             ]
         )
-        print(R)
         control_input = R @ np.array([gyro_t.x, gyro_t.y, gyro_t.z]).reshape(-1, 1)
-        matrix_uncertainty = np.array(
+        measurement_uncertainty = np.array(
             [
                 [accel_sensor.maximum_range, 0, 0, 0, 0, 0],
                 [0, accel_sensor.maximum_range, 0, 0, 0, 0],
@@ -202,14 +190,18 @@ def main():
                 [0, 0, 0, 0, 0, gyro_sensor.maximum_range],
             ]
         )
-        kf.predict(
+        kf.run(
+            t=t,
             control_input=control_input,
             control_transform=control_transform,
-            matrix_uncertainty=matrix_uncertainty,
+            measurement_uncertainty=measurement_uncertainty,
+            state_transition_transform=state_transition,
             observation=observation,
         )
-        print(state_transition)
+        print(kf.state())
 
+
+main()
 
 # EKF implementation
 
