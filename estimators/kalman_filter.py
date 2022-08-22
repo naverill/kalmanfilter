@@ -100,19 +100,21 @@ class KalmanFilter:
         """
         Extrapolate the uncertainty of the system at time t
         """
-        state_matrix = (
+        state_transform = (
             state_transition_transform
             if state_transition_transform is not None
             else self._state_transition_transform
         )
         print(
-            state_matrix.shape,
+            state_transform.shape,
             self._estimate_uncertainty[self._prev_t].shape,
             self._process_noise_covariance.shape,
         )
         self._estimate_uncertainty_pred[t] = np.diag(
             np.diag(
-                state_matrix @ self._estimate_uncertainty[self._prev_t] @ state_matrix.T
+                state_transform
+                @ self._estimate_uncertainty[self._prev_t]
+                @ state_transform.T
                 + self._process_noise_covariance
             )
         )

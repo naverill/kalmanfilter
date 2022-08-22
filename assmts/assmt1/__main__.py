@@ -109,6 +109,7 @@ def main():
             [0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0],
         ]
     )
+    print(process_noise_covariance)
     kf = KalmanFilter(
         matrix_transform=matrix_transform,
         process_noise_covariance=process_noise_covariance,
@@ -118,7 +119,7 @@ def main():
         [start_pos.x, start_pos.y, start_pos.z, 0, 0, 0, 0, 0, 0, 0, 0, 0]
     ).reshape(-1, 1)
 
-    estimate_uncertainty = np.random.normal(size=init_state.shape)
+    estimate_uncertainty = np.random.normal(size=init_state.shape).T
     kf.init_state(
         t=time[0], state=init_state, estimate_uncertainty=estimate_uncertainty
     )
