@@ -34,7 +34,6 @@ def plot_3d_timeseries(
     x: list[float],
     y: list[float],
     z: list[float],
-    truth_values: list[Measurement],
 ):
     fig = go.Figure(
         data=[
@@ -47,7 +46,7 @@ def plot_3d_timeseries(
                     cmax=39,
                     cmin=0,
                     color=[(t - time[0]).total_seconds() for t in time],
-                    colorbar=dict(title="Colorbar"),
+                    colorbar=dict(title="Seconds"),
                     colorscale="Viridis",
                 ),
                 mode="markers",
@@ -68,6 +67,7 @@ def create_sensor(config):
     id, type = name[: name.find(" ")], name[name.find(" ") + 1 :]
     params.update({"id": id, "type": type})
 
+    # Grab sensor class from type
     sensor = eval(type.replace(" ", ""))
     return sensor(**params)
 
@@ -151,7 +151,7 @@ def main():
     )
 
     init_state = np.array(
-        [start_pos.x, start_pos.y, start_pos.z, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+        [start_pos.x, start_pos.y, start_pos.z] + [1e-5] * 12
     ).reshape(-1, 1)
 
     estimate_uncertainty = np.full(
@@ -164,16 +164,24 @@ def main():
     for i, t in enumerate(time):
         dt = (t - time[i - 1]).total_seconds()
 
-        accel_t = accel_sensor.poll(t)
-        gyro_t = gyro_sensor.poll(t)
-        if not accel_t or not gyro_t:
+        if (accel_t := accel_sensor.poll(t)) is None or (
+            gyro_t := gyro_sensor.poll(t)
+        ) is None:
             continue
 
         # https://escholarship.org/content/qt5rs5t0sf/qt5rs5t0sf_noSplash_e1588dedf177d86a3652374bc997314f.pdf
 
-        # get estimates for roll and pitch
-        r_hat = np.arctan2(accel_t.y, np.sqrt(accel_t.x**2 + accel_t.z**2))
-        p_hat = np.arctan2(accel_t.x, np.sqrt(np.sqrt(accel_t.y**2 + accel_t.z**2)))
+        state = kf.state.flatten()
+        ax, ay, az = state[6], state[7], state[8]
+        r_hat = np.arctan2(ay, np.sqrt(ax**2 + az**2))
+        p_hat = np.arctan2(ax, np.sqrt(np.sqrt(ay**2 + az**2)))
+        R = np.array(
+            [
+                [1, np.cos(p_hat) * np.sin(r_hat), np.tan(p_hat) * np.cos(r_hat)],
+                [0, np.cos(r_hat), -np.sin(r_hat)],
+                [0, np.sin(p_hat) / np.cos(r_hat), np.cos(r_hat) / np.sin(p_hat)],
+            ]
+        )
         observation = np.array([accel_t.x, accel_t.y, accel_t.z]).reshape(-1, 1)
         state_transition = np.array(
             [
@@ -197,7 +205,7 @@ def main():
         )
         control_transform = np.array(
             [
-                # dr      dp      dy
+                # r_dot      p_dot      y_dot
                 [0, 0, 0],  # x
                 [0, 0, 0],  # y
                 [0, 0, 0],  # z
@@ -217,13 +225,7 @@ def main():
         )
         # control vector is  euler angle velocities of the IMU in world frame
         # https://calhoun.nps.edu/bitstream/handle/10945/34427/McGhee_bachmann_zyda_rigid_2000.pdf?sequence=1
-        R = np.array(
-            [
-                [1, np.cos(p_hat) * np.sin(r_hat), np.tan(p_hat) * np.cos(r_hat)],
-                [0, np.cos(r_hat), -np.sin(r_hat)],
-                [0, np.sin(p_hat) / np.cos(r_hat), np.cos(r_hat) / np.sin(p_hat)],
-            ]
-        )
+        # get estimates for roll and pitch
         # calculate rate of change of r, p y
         control_input = R @ np.array([gyro_t.x, gyro_t.y, gyro_t.z]).reshape(-1, 1)
         measurement_uncertainty = np.diag(
