@@ -16,7 +16,7 @@ class Measurement:
         self._x = float(x)
         self._y = float(y)
         self._z = float(z)
-        self._accuracy = accuracy
+        self._accuracy = float(accuracy)
 
     @property
     def x(self) -> float:
@@ -113,9 +113,9 @@ class Sensor:
         self.type = type
         self.version = version
         self.vendor = vendor
-        self.resolution = resolution
-        self.power = power
-        self.maximum_range = maximumRange
+        self.resolution = float(resolution)
+        self.power = float(power)
+        self.maximum_range = float(maximumRange)
         self._covariance = None
 
     _MEASUREMENTS: dict[datetime, Measurement] = {}

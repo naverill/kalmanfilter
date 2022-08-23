@@ -105,11 +105,6 @@ class KalmanFilter:
             if state_transition_transform is not None
             else self._state_transition_transform
         )
-        print(
-            state_transform.shape,
-            self._estimate_uncertainty[self._prev_t].shape,
-            self._process_noise_covariance.shape,
-        )
         self._estimate_uncertainty_pred[t] = np.diag(
             np.diag(
                 state_transform
@@ -159,7 +154,7 @@ class KalmanFilter:
         )
 
     def _update_estimate_uncertainty(self, t: datetime) -> None:
-        n = self._observation[t].shape[0]
+        n = self._estimate_uncertainty_pred[t].shape[0]
         self._estimate_uncertainty[t] = np.diag(
             np.diag(
                 (np.eye(n) - self._kalman_gain[t] @ self._matrix_transform)
@@ -189,8 +184,8 @@ class KalmanFilter:
 
     @property
     def state_history(self) -> tuple[datetime, np.array]:
-        return self._state.items()
+        return np.vstack([s.T for s in self._state.values()])
 
     @property
     def uncertainty_history(self) -> tuple[datetime, np.array]:
-        return self._estimate_uncertainty.items()
+        return np.vstack([np.diag(s) for s in self._estimate_uncertainty.values()])
