@@ -76,7 +76,7 @@ def generate_control_input(
     # https://calhoun.nps.edu/bitstream/handle/10945/34427/McGhee_bachmann_zyda_rigid_2000.pdf?sequence=1
     # get estimates for roll and pitch
     # calculate rate of change of r, p y
-    control_input = R @ np.array([gyro.x, gyro.y, -gyro.z]).reshape(-1, 1)
+    control_input = R @ np.array([gyro.x, gyro.y, gyro.z]).reshape(-1, 1)
     return control_input
 
 
@@ -103,7 +103,7 @@ def main():
     )
     matrix_transform = np.array(
         [
-            # x, y, z, vx, vy, vz, ax, ay, az, r, p, y, rb, pb, yb
+            # x, y, z, vx, vy, vz, ax, ay, az, r, p, y, r_bias, p_bias, y_bias
             [0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0],
             [0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0],
             [0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0],
@@ -207,13 +207,3 @@ def main():
 
 
 main()
-
-
-# vel_x = integrate.cumtrapz(new_acce[:,0], time_, initial=0)
-# vel_y = integrate.cumtrapz(new_acce[:,1], time_, initial=0)
-# vel_z = integrate.cumtrapz(new_acce[:,2], time_, initial=0)
-#
-# pos_x = integrate.cumtrapz(vel_x, time_, initial=0)
-# pos_y = integrate.cumtrapz(vel_y, time_, initial=0)
-# pos_z = integrate.cumtrapz(vel_z, time_, initial=0)
-#
