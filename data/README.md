@@ -5,4 +5,5 @@ During the walk, an Android smartphone is held flat in front of the surveyors bo
 
 A note on data quality: In the training files, you may find occasionally that a line is missing the ending newline character, causing it to run on to the next line. It is up to you how you want to handle this issue. This issue is not found in the test data.
 
-[data source](https://www.kaggle.com/competitions/indoor-location-navigation/data)
+[Data Source](https://www.kaggle.com/competitions/indoor-location-navigation/data)
+[Competiton README](https://github.com/location-competition/indoor-location-competition-20)
