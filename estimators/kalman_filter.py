@@ -77,7 +77,7 @@ class KalmanFilter:
         """
         Extrapolate the state of the system at time t
         """
-        state_matrix = (
+        state_transform = (
             state_transition_transform
             if state_transition_transform is not None
             else self._state_transition_transform
@@ -88,7 +88,7 @@ class KalmanFilter:
             else self._control_transform
         )
         self._state_pred[t] = (
-            state_matrix @ self._state[self._prev_t]
+            state_transform @ self._state[self._prev_t]
             + control_matrix @ self._control_input[t]
         )
 
@@ -183,9 +183,13 @@ class KalmanFilter:
         return self._kalman_gain[self._prev_t]
 
     @property
-    def state_history(self) -> tuple[datetime, np.array]:
+    def state_history(self) -> np.array:
         return np.vstack([s.T for s in self._state.values()])
 
     @property
-    def uncertainty_history(self) -> tuple[datetime, np.array]:
+    def gain_history(self) -> np.array:
+        return np.array([g for g in self._kalman_gain.values()])
+
+    @property
+    def uncertainty_history(self) -> np.array:
         return np.vstack([np.diag(s) for s in self._estimate_uncertainty.values()])

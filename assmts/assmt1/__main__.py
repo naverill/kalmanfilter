@@ -2,7 +2,6 @@
 TODO:
     - extend to EKF
 """
-import re
 from datetime import datetime
 from enum import Enum
 from pathlib import Path
@@ -12,6 +11,7 @@ import pandas as pd
 import plotly.graph_objects as go
 from scipy import integrate
 from scipy.spatial.transform import Rotation as Rot
+from utils import generate_environment
 
 from estimators.kalman_filter import KalmanFilter
 from estimators.sensors import (
@@ -27,6 +27,8 @@ from estimators.sensors import (
 )
 
 ABS_PATH = Path(__file__).parent.resolve()
+
+G = 9.81  # gravitational acceleration (m/s^2)
 
 
 def plot_3d_timeseries(
@@ -56,64 +58,26 @@ def plot_3d_timeseries(
     fig.show()
 
 
-def create_sensor(config):
-    params = {}
-    # Parse config string into parameter list
-    config = re.findall("([a-zA-Z]*):([a-zA-Z0-9 .]*)", config)
-    for field, value in config:
-        params[field] = value
-
-    name = params.pop("name")
-    id, type = name[: name.find(" ")], name[name.find(" ") + 1 :]
-    params.update({"id": id, "type": type})
-
-    # Grab sensor class from type
-    sensor = eval(type.replace(" ", ""))
-    return sensor(**params)
-
-
-def process_measurement(reading: str):
-    data = reading.rstrip("\n").split("\t")
-
-    t = datetime.fromtimestamp(int(data[0]) / 1000.0)
-    measurement = data[2:]
-
-    reading_type = data[1].lstrip("TYPE_")
-    sensor_type = (
-        reading_type.replace("MAGNETIC_FIELD", "MAGNETOMETER").lower().replace("_", " ")
+def generate_control_input(
+    time: datetime, accel: Measurement, gyro: Measurement
+) -> np.array:
+    # https://escholarship.org/content/qt5rs5t0sf/qt5rs5t0sf_noSplash_e1588dedf177d86a3652374bc997314f.pdf
+    r_est = np.arctan2(accel.y, accel.z)
+    p_est = np.arcsin(accel.x / G)
+    # https://liqul.github.io/blog/assets/rotation.pdf
+    R = np.array(
+        [
+            [1, np.sin(p_est) * np.tan(r_est), np.cos(p_est) * np.tan(r_est)],
+            [0, np.cos(r_est), -np.sin(r_est)],
+            [0, np.sin(r_est) / np.cos(p_est), np.cos(r_est) / np.cos(p_est)],
+        ]
     )
-    return (
-        t,
-        sensor_type,
-        measurement,
-    )
-
-
-def generate_environment(file_path):
-    waypoints = {}
-    sensors = {
-        "rotation vector": RotationVector(
-            "R1", "RotationVector", "1", "BOSCH", 0.0, 1, 0
-        ),
-    }
-    time_ = set()
-    with open(file_path, "r", encoding="utf-8") as f:
-        lines = f.readlines()
-
-    for line in lines:
-        if line.startswith("#"):
-            if line.find("type:") != -1:
-                sensor = create_sensor(line)
-                if sensor:
-                    sensors[sensor.type.lower()] = sensor
-        else:
-            t, sensor_type, measurement = process_measurement(line)
-            if sensor_type == "waypoint":
-                waypoints[t] = Waypoint(t, *measurement)
-            elif sensor := sensors.get(sensor_type):
-                sensor.add_reading(t, *measurement)
-            time_.add(t)
-    return waypoints, sorted(list(time_)), sensors
+    # control vector is  euler angle velocities of the IMU in world frame
+    # https://calhoun.nps.edu/bitstream/handle/10945/34427/McGhee_bachmann_zyda_rigid_2000.pdf?sequence=1
+    # get estimates for roll and pitch
+    # calculate rate of change of r, p y
+    control_input = R @ np.array([gyro.x, gyro.y, -gyro.z]).reshape(-1, 1)
+    return control_input
 
 
 def main():
@@ -126,7 +90,7 @@ def main():
     gyro_sensor = sensors["gyroscope"]
 
     # state = [x, y, z, vx, vy, vz, ax, ay, az, r, p, y, rb, pb, yb]
-    # observation = [ax, ay, ax, r, p, y]
+    # observation = [ax, ay, ax]
     process_noise_covariance = np.diag(
         np.hstack(
             [
@@ -150,59 +114,30 @@ def main():
         process_noise_covariance=process_noise_covariance,
     )
 
-    init_state = np.array(
-        [start_pos.x, start_pos.y, start_pos.z] + [1e-5] * 12
-    ).reshape(-1, 1)
-
-    estimate_uncertainty = np.full(
-        shape=(init_state.shape[0], init_state.shape[0]), fill_value=0.99
-    )
-    kf.init_state(
-        t=time[0], state=init_state, estimate_uncertainty=estimate_uncertainty
-    )
-
+    first_iter = True
     for i, t in enumerate(time):
-        dt = (t - time[i - 1]).total_seconds()
-
         if (accel_t := accel_sensor.poll(t)) is None or (
             gyro_t := gyro_sensor.poll(t)
         ) is None:
             continue
 
-        # https://escholarship.org/content/qt5rs5t0sf/qt5rs5t0sf_noSplash_e1588dedf177d86a3652374bc997314f.pdf
+        if first_iter:
+            kf.init_state(
+                t=t,
+                state=np.array(
+                    [start_pos.x, start_pos.y, start_pos.z]
+                    + [1e-5] * 3
+                    + [accel_t.x, accel_t.y, accel_t.z]
+                    + [1e-5] * 6
+                ).reshape(-1, 1),
+                estimate_uncertainty=np.full(shape=(15, 15), fill_value=0.99),
+            )
+            first_iter = False
+            continue
 
-        state = kf.state.flatten()
-        ax, ay, az = state[6], state[7], state[8]
-        r_hat = np.arctan2(ay, np.sqrt(ax**2 + az**2))
-        p_hat = np.arctan2(ax, np.sqrt(np.sqrt(ay**2 + az**2)))
-        R = np.array(
-            [
-                [1, np.cos(p_hat) * np.sin(r_hat), np.tan(p_hat) * np.cos(r_hat)],
-                [0, np.cos(r_hat), -np.sin(r_hat)],
-                [0, np.sin(p_hat) / np.cos(r_hat), np.cos(r_hat) / np.sin(p_hat)],
-            ]
-        )
-        observation = np.array([accel_t.x, accel_t.y, accel_t.z]).reshape(-1, 1)
-        state_transition = np.array(
-            [
-                # x  y  z   vx  vy  vz  ax  ay  az  r   p   y rb pb yb
-                [1, 0, 0, dt, 0, 0, 0.5 * dt**2, 0, 0, 0, 0, 0, 0, 0, 0],  # x
-                [0, 1, 0, 0, dt, 0, 0, 0.5 * dt**2, 0, 0, 0, 0, 0, 0, 0],  # y
-                [0, 0, 1, 0, 0, dt, 0, 0, 0, 0.5 * dt**2, 0, 0, 0, 0, 0],  # z
-                [0, 0, 0, 1, 0, 0, dt, 0, 0, 0, 0, 0, 0, 0, 0],  # vx
-                [0, 0, 0, 0, 1, 0, 0, dt, 0, 0, 0, 0, 0, 0, 0],  # vy
-                [0, 0, 0, 0, 0, 1, 0, 0, dt, 0, 0, 0, 0, 0, 0],  # vz
-                [0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0],  # ax
-                [0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0],  # ay
-                [0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0],  # az
-                [0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, -dt, 0, 0],  # r
-                [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, -dt, 0],  # p
-                [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, -dt],  # y
-                [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0],  # rb
-                [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0],  # pb
-                [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1],  # yb
-            ]
-        )
+        dt = (t - time[i - 1]).total_seconds()
+
+        control_input = generate_control_input(t, accel_t, gyro_t)
         control_transform = np.array(
             [
                 # r_dot      p_dot      y_dot
@@ -223,16 +158,33 @@ def main():
                 [0, 0, 0],  # yb
             ]
         )
-        # control vector is  euler angle velocities of the IMU in world frame
-        # https://calhoun.nps.edu/bitstream/handle/10945/34427/McGhee_bachmann_zyda_rigid_2000.pdf?sequence=1
-        # get estimates for roll and pitch
-        # calculate rate of change of r, p y
-        control_input = R @ np.array([gyro_t.x, gyro_t.y, gyro_t.z]).reshape(-1, 1)
+
+        state_transition = np.array(
+            [
+                # x  y  z   vx  vy  vz  ax  ay  az  r   p   y rb pb yb
+                [1, 0, 0, dt, 0, 0, 0.5 * dt**2, 0, 0, 0, 0, 0, 0, 0, 0],  # x
+                [0, 1, 0, 0, dt, 0, 0, 0.5 * dt**2, 0, 0, 0, 0, 0, 0, 0],  # y
+                [0, 0, 1, 0, 0, dt, 0, 0, 0.5 * dt**2, 0, 0, 0, 0, 0, 0],  # z
+                [0, 0, 0, 1, 0, 0, dt, 0, 0, 0, 0, 0, 0, 0, 0],  # vx
+                [0, 0, 0, 0, 1, 0, 0, dt, 0, 0, 0, 0, 0, 0, 0],  # vy
+                [0, 0, 0, 0, 0, 1, 0, 0, dt, 0, 0, 0, 0, 0, 0],  # vz
+                [0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0],  # ax
+                [0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0],  # ay
+                [0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0],  # az
+                [0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, -dt, 0, 0],  # r
+                [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, -dt, 0],  # p
+                [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, -dt],  # y
+                [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0],  # rb
+                [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0],  # pb
+                [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1],  # yb
+            ]
+        )
+        observation = np.array([accel_t.x, accel_t.y, accel_t.z]).reshape(-1, 1)
         measurement_uncertainty = np.diag(
             [
-                gyro_sensor.maximum_range,
-                gyro_sensor.maximum_range,
-                gyro_sensor.maximum_range,
+                accel_sensor.maximum_range,
+                accel_sensor.maximum_range,
+                accel_sensor.maximum_range,
             ],
         )
 
@@ -247,7 +199,10 @@ def main():
 
     state = kf.state_history
     uncertainty = kf.uncertainty_history
+    gain = kf.gain_history
     plot_3d_timeseries(time, state[:, 0], state[:, 1], state[:, 2])
+    plot_3d_timeseries(time, state[:, 9], state[:, 10], state[:, 11])
+    plot_3d_timeseries(time, gain[:, 6, 0], gain[:, 7, 1], gain[:, 8, 2])
     plot_3d_timeseries(time, uncertainty[:, 0], uncertainty[:, 1], uncertainty[:, 2])
 
 
