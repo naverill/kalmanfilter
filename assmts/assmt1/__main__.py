@@ -53,8 +53,9 @@ def plot_3d_timeseries(
                 ),
                 mode="markers",
             )
-        ]
+        ],
     )
+    fig.update_layout(scene=dict(yaxis_title="z", zaxis_title="y"))
     fig.show()
 
 
