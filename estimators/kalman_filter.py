@@ -191,5 +191,13 @@ class KalmanFilter:
         return np.array([g for g in self._kalman_gain.values()])
 
     @property
+    def observation_history(self) -> np.array:
+        return np.vstack([o.T for o in self._observation.values()])
+
+    @property
+    def input_history(self) -> np.array:
+        return np.vstack([i.T for i in self._control_input.values()])
+
+    @property
     def uncertainty_history(self) -> np.array:
         return np.vstack([np.diag(s) for s in self._estimate_uncertainty.values()])

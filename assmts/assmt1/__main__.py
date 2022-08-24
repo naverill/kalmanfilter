@@ -2,6 +2,8 @@
 TODO:
     - extend to EKF
 """
+import os
+import random
 from datetime import datetime
 from enum import Enum
 from pathlib import Path
@@ -11,7 +13,7 @@ import pandas as pd
 import plotly.graph_objects as go
 from scipy import integrate
 from scipy.spatial.transform import Rotation as Rot
-from utils import generate_environment
+from utils import generate_environment, generate_sensors
 
 from estimators.kalman_filter import KalmanFilter
 from estimators.sensors import (
@@ -27,8 +29,9 @@ from estimators.sensors import (
 )
 
 ABS_PATH = Path(__file__).parent.resolve()
+random.seed(12345)
 
-G = 9.81  # gravitational acceleration (m/s^2)
+G = +9.81  # gravitational acceleration (m/s^2)
 
 
 def plot_3d_timeseries(
@@ -36,6 +39,9 @@ def plot_3d_timeseries(
     x: list[float],
     y: list[float],
     z: list[float],
+    x_truth: list[float] = None,
+    y_truth: list[float] = None,
+    z_truth: list[float] = None,
 ):
     fig = go.Figure(
         data=[
@@ -54,6 +60,15 @@ def plot_3d_timeseries(
                 mode="markers",
             )
         ],
+    )
+    fig.add_trace(
+        go.Scatter3d(
+            x=x_truth,
+            y=y_truth,
+            z=z_truth,
+            marker=dict(size=8, cmax=39, cmin=0, color="black"),
+            mode="markers",
+        )
     )
     fig.update_layout(scene=dict(yaxis_title="z", zaxis_title="y"))
     fig.show()
@@ -82,11 +97,19 @@ def generate_control_input(
 
 
 def main():
-    waypoints, time, sensors = generate_environment(
-        f"{ABS_PATH}/../../data/5e15730aa280850006f3d005.txt"
-    )
-    start_pos = waypoints[time[0]]
+    fdir = f"{ABS_PATH}/../../data/indoor_robot/"
+    config_file = "sensor_config.txt"
+    files = [f for f in os.listdir(fdir) if f != config_file]
 
+    sensors = generate_sensors(fdir + config_file)
+    waypoints, time = generate_environment(
+        file_path=fdir + random.choice(files), sensors=sensors
+    )
+    start_pos = (
+        waypoints[time[0]] if waypoints.get(time[0]) else Waypoint(time[0], 0, 0)
+    )
+
+    alpha = 0.8
     accel_sensor = sensors["accelerometer"]
     gyro_sensor = sensors["gyroscope"]
 
@@ -116,11 +139,27 @@ def main():
     )
 
     first_iter = True
+    gravity = Measurement(time[0], 0, 0, 0)
     for i, t in enumerate(time):
         if (accel_t := accel_sensor.poll(t)) is None or (
             gyro_t := gyro_sensor.poll(t)
         ) is None:
             continue
+
+        # Isolate the force of gravity with the low-pass filter
+        gravity = Measurement(
+            t,
+            x=alpha * gravity.x + (1 - alpha) * accel_t.x,
+            y=alpha * gravity.y + (1 - alpha) * accel_t.y,
+            z=alpha * gravity.z + (1 - alpha) * accel_t.z,
+        )
+        # Remove the gravity contribution with the high-pass filter
+        lin_accel_t = Measurement(
+            t,
+            x=accel_t.x - gravity.x,
+            y=accel_t.y - gravity.y,
+            z=accel_t.z - gravity.z,
+        )
 
         if first_iter:
             kf.init_state(
@@ -128,7 +167,7 @@ def main():
                 state=np.array(
                     [start_pos.x, start_pos.y, start_pos.z]
                     + [1e-5] * 3
-                    + [accel_t.x, accel_t.y, accel_t.z]
+                    + [lin_accel_t.x, lin_accel_t.y, lin_accel_t.z]
                     + [1e-5] * 6
                 ).reshape(-1, 1),
                 estimate_uncertainty=np.full(shape=(15, 15), fill_value=0.99),
@@ -138,7 +177,7 @@ def main():
 
         dt = (t - time[i - 1]).total_seconds()
 
-        control_input = generate_control_input(t, accel_t, gyro_t)
+        control_input = generate_control_input(t, lin_accel_t, gyro_t)
         control_transform = np.array(
             [
                 # r_dot      p_dot      y_dot
@@ -180,7 +219,9 @@ def main():
                 [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1],  # yb
             ]
         )
-        observation = np.array([accel_t.x, accel_t.y, accel_t.z]).reshape(-1, 1)
+        observation = np.array([lin_accel_t.x, lin_accel_t.y, lin_accel_t.z]).reshape(
+            -1, 1
+        )
         measurement_uncertainty = np.diag(
             [
                 accel_sensor.maximum_range,
@@ -201,7 +242,15 @@ def main():
     state = kf.state_history
     uncertainty = kf.uncertainty_history
     gain = kf.gain_history
-    plot_3d_timeseries(time, state[:, 0], state[:, 1], state[:, 2])
+    plot_3d_timeseries(
+        time,
+        x=state[:, 0],
+        y=state[:, 1],
+        z=state[:, 2],
+        x_truth=[point.x for point in waypoints.values()],
+        y_truth=[point.y for point in waypoints.values()],
+        z_truth=[0 for _ in waypoints.values()],
+    )
     plot_3d_timeseries(time, state[:, 9], state[:, 10], state[:, 11])
     plot_3d_timeseries(time, gain[:, 6, 0], gain[:, 7, 1], gain[:, 8, 2])
     plot_3d_timeseries(time, uncertainty[:, 0], uncertainty[:, 1], uncertainty[:, 2])
