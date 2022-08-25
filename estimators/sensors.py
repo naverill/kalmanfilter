@@ -128,13 +128,11 @@ class Sensor:
         accuracy: float,
     ):
         self._measurements[timestamp] = Measurement(
-            **{
-                "timestamp": timestamp,
-                "x": x,
-                "y": y,
-                "z": z,
-                "accuracy": float(accuracy),
-            }
+            timestamp,
+            x,
+            y,
+            z,
+            float(accuracy),
         )
 
     def poll(self, timestamp: datetime) -> Measurement:
@@ -176,16 +174,14 @@ class SensorUncalibrated(Sensor):
         accuracy: float,
     ):
         self._measurements[timestamp] = MeasurementUncalibrated(
-            **{
-                "timestamp": timestamp,
-                "x": x,
-                "y": y,
-                "z": z,
-                "x_corrected": x_corrected,
-                "y_corrected": y_corrected,
-                "z_corrected": z_corrected,
-                "accuracy": accuracy,
-            }
+            timestamp,
+            x,
+            y,
+            z,
+            x_corrected,
+            y_corrected,
+            z_corrected,
+            accuracy,
         )
 
     @property
