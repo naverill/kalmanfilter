@@ -1,0 +1,10 @@
+#	startTime:1578462618385
+#	SiteID:5a0546857ecc773753327266	SiteName:西溪银泰城	FloorId:5a24ae78fe4e220014739c5c	FloorName:地下一层
+#	Brand:OPPO	Model:PBCM10	AndroidName:8.1.0	APILevel:27	
+#	type:1	name:BMI160 Accelerometer	version:2062600	vendor:BOSCH	resolution:0.0023956299	power:0.18	maximumRange:39.22661
+#	type:4	name:BMI160 Gyroscope	version:2062600	vendor:BOSCH	resolution:0.0010681152	power:0.9	maximumRange:34.906586
+#	type:2	name:AK09911 Magnetometer	version:1	vendor:AKM	resolution:0.5996704	power:2.4	maximumRange:4911.9995
+#	type:35	name:BMI160 Accelerometer Uncalibrated	version:2062600	vendor:BOSCH	resolution:0.0023956299	power:0.18	maximumRange:39.22661
+#	type:16	name:BMI160 Gyroscope Uncalibrated	version:2062600	vendor:BOSCH	resolution:0.0010681152	power:0.9	maximumRange:34.906586
+#	type:14	name:AK09911 Magnetometer Uncalibrated	version:1	vendor:AKM	resolution:0.5996704	power:2.4	maximumRange:4911.9995
+#	VersionName:v20191120-nightly-9-gde3748b	VersionCode:424
