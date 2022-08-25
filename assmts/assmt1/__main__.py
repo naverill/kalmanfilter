@@ -106,8 +106,8 @@ def generate_control_input(
     https://au.mathworks.com/help/aeroblks/customvariablemass6dofeulerangles.html
     """
     # get estimates for roll and pitch
-    r_est = np.arctan2(accel.y, accel.z)
-    p_est = np.arcsin(accel.x / G)
+    r_est = np.arctan2(accel.y, np.sqrt(accel.x**2 + accel.z**2))
+    p_est = np.arctan2(accel.x, np.sqrt(accel.y**2 + accel.z**2))
     R = np.array(
         [
             [1, np.sin(r_est) * np.tan(p_est), np.cos(r_est) * np.tan(p_est)],
@@ -172,14 +172,14 @@ def main():
         ) is None:
             continue
 
-        # Isolate the force of gravity with the low-pass filter
+        # Isolate the force of gravity with a low-pass filter
         gravity = Measurement(
             t,
             x=alpha * gravity.x + (1 - alpha) * accel_t.x,
             y=alpha * gravity.y + (1 - alpha) * accel_t.y,
             z=alpha * gravity.z + (1 - alpha) * accel_t.z,
         )
-        # Remove the gravity contribution with the high-pass filter
+        # Remove the gravity contribution with a high-pass filter
         lin_accel_t = Measurement(
             t,
             x=accel_t.x - gravity.x,
@@ -283,6 +283,17 @@ def main():
         z_truth=[0 for _ in waypoints.values()],
         title="Position over time",
     )
+    plot_3d_timeseries(
+        time, gain[:, 6, 0], gain[:, 7, 1], gain[:, 8, 2], "Kalman Gain over time"
+    )
+    return
+    plot_3d_timeseries(
+        time,
+        uncertainty[:, 0],
+        uncertainty[:, 1],
+        uncertainty[:, 2],
+        "Position uncertainty over time",
+    )
     gyro = np.array(gyro)
     accel = np.array(accel)
     plot_2d_timeseries(
@@ -315,17 +326,6 @@ def main():
         y=state[:, 7],
         z=state[:, 8],
         title="Filtered Acceleration over time",
-    )
-    return
-    plot_3d_timeseries(
-        time, gain[:, 6, 0], gain[:, 7, 1], gain[:, 8, 2], "Kalman Gain over time"
-    )
-    plot_3d_timeseries(
-        time,
-        uncertainty[:, 0],
-        uncertainty[:, 1],
-        uncertainty[:, 2],
-        "Position uncertainty over time",
     )
 
 
