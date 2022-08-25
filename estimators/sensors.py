@@ -11,12 +11,12 @@ class Measurement:
         x: float,
         y: float,
         z: float,
-        accuracy: int,
+        accuracy: int = None,
     ):
         self._x = float(x)
         self._y = float(y)
         self._z = float(z)
-        self._accuracy = float(accuracy)
+        self._accuracy = int(accuracy) if accuracy else None
 
     @property
     def x(self) -> float:
@@ -117,8 +117,7 @@ class Sensor:
         self.power = float(power)
         self.maximum_range = float(maximumRange)
         self._covariance = None
-
-    _MEASUREMENTS: dict[datetime, Measurement] = {}
+        self._measurements: dict[datetime, Measurement] = {}
 
     def add_reading(
         self,
@@ -128,24 +127,22 @@ class Sensor:
         z: float,
         accuracy: float,
     ):
-        self._MEASUREMENTS[timestamp] = Measurement(
-            **{
-                "timestamp": timestamp,
-                "x": x,
-                "y": y,
-                "z": z,
-                "accuracy": float(accuracy),
-            }
+        self._measurements[timestamp] = Measurement(
+            timestamp,
+            x,
+            y,
+            z,
+            float(accuracy),
         )
 
     def poll(self, timestamp: datetime) -> Measurement:
-        return self._MEASUREMENTS.get(timestamp)
+        return self._measurements.get(timestamp)
 
     @property
     def covariance(self):
         if self._covariance is None:
             self._covariance = np.cov(
-                np.hstack([m.matrix for m in self._MEASUREMENTS.values()])
+                np.hstack([m.matrix for m in self._measurements.values()])
             )
         return self._covariance
 
@@ -176,24 +173,22 @@ class SensorUncalibrated(Sensor):
         z_corrected: float,
         accuracy: float,
     ):
-        self._MEASUREMENTS[timestamp] = MeasurementUncalibrated(
-            **{
-                "timestamp": timestamp,
-                "x": x,
-                "y": y,
-                "z": z,
-                "x_corrected": x_corrected,
-                "y_corrected": y_corrected,
-                "z_corrected": z_corrected,
-                "accuracy": accuracy,
-            }
+        self._measurements[timestamp] = MeasurementUncalibrated(
+            timestamp,
+            x,
+            y,
+            z,
+            x_corrected,
+            y_corrected,
+            z_corrected,
+            accuracy,
         )
 
     @property
     def covariance_corrected(self):
         if self._covariance_corrected is None:
             self._covariance_corrected = np.cov(
-                np.hstack([m.matrix_corrected for m in self._MEASUREMENTS.values()])
+                np.hstack([m.matrix_corrected for m in self._measurements.values()])
             )
         return self._covariance_corrected
 
@@ -201,7 +196,7 @@ class SensorUncalibrated(Sensor):
     def covariance_full(self):
         if self._covariance_full is None:
             self._covariance_full = np.cov(
-                np.hstack([m.matrix_full for m in self._MEASUREMENTS.values()])
+                np.hstack([m.matrix_full for m in self._measurements.values()])
             )
         return self._covariance_full
 

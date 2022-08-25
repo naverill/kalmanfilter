@@ -2,16 +2,15 @@
 TODO:
     - extend to EKF
 """
+import os
+import random
 from datetime import datetime
 from enum import Enum
 from pathlib import Path
 
 import numpy as np
-import pandas as pd
-import plotly.graph_objects as go
-from scipy import integrate
-from scipy.spatial.transform import Rotation as Rot
-from utils import generate_environment
+from numpy.typing import NDArray
+from utils import generate_environment, generate_sensors
 
 from estimators.kalman_filter import KalmanFilter
 from estimators.sensors import (
@@ -25,67 +24,77 @@ from estimators.sensors import (
     RotationVector,
     Waypoint,
 )
+from estimators.visualise import plot_2d_timeseries, plot_3d_timeseries
 
 ABS_PATH = Path(__file__).parent.resolve()
-
-G = 9.81  # gravitational acceleration (m/s^2)
-
-
-def plot_3d_timeseries(
-    time: list[datetime],
-    x: list[float],
-    y: list[float],
-    z: list[float],
-):
-    fig = go.Figure(
-        data=[
-            go.Scatter3d(
-                x=x,
-                y=y,
-                z=z,
-                marker=dict(
-                    size=8,
-                    cmax=39,
-                    cmin=0,
-                    color=[(t - time[0]).total_seconds() for t in time],
-                    colorbar=dict(title="Seconds"),
-                    colorscale="Viridis",
-                ),
-                mode="markers",
-            )
-        ],
-    )
-    fig.update_layout(scene=dict(yaxis_title="z", zaxis_title="y"))
-    fig.show()
+random.seed(12345)
+G = 9.81
 
 
 def generate_control_input(
     time: datetime, accel: Measurement, gyro: Measurement
 ) -> np.array:
-    # https://escholarship.org/content/qt5rs5t0sf/qt5rs5t0sf_noSplash_e1588dedf177d86a3652374bc997314f.pdf
-    r_est = np.arctan2(accel.y, accel.z)
-    p_est = np.arcsin(accel.x / G)
-    # https://liqul.github.io/blog/assets/rotation.pdf
+    """
+    control vector is  euler angle velocities of the IMU in world frame
+
+    pitch, roll estimation:
+    https://escholarship.org/content/qt5rs5t0sf/qt5rs5t0sf_noSplash_e1588dedf177d86a3652374bc997314f.pdf
+
+    body rate to euler transformation:
+    https://au.mathworks.com/help/aeroblks/customvariablemass6dofeulerangles.html
+    """
+    # get estimates for roll and pitch
+    r_est = np.arctan2(accel.y, np.sqrt(accel.x**2 + accel.z**2))
+    p_est = np.arctan2(accel.x, np.sqrt(accel.y**2 + accel.z**2))
+    # calculate rate of change of euler angles
     R = np.array(
         [
-            [1, np.sin(p_est) * np.tan(r_est), np.cos(p_est) * np.tan(r_est)],
-            [0, np.cos(r_est), -np.sin(r_est)],
-            [0, np.sin(r_est) / np.cos(p_est), np.cos(r_est) / np.cos(p_est)],
+            [1, np.sin(r_est) * np.tan(p_est), np.cos(r_est) * np.tan(p_est)],
+            [0, np.cos(p_est), -np.sin(p_est)],
+            [0, np.sin(p_est) / np.cos(r_est), np.cos(p_est) / np.cos(r_est)],
         ]
     )
-    # control vector is  euler angle velocities of the IMU in world frame
-    # https://calhoun.nps.edu/bitstream/handle/10945/34427/McGhee_bachmann_zyda_rigid_2000.pdf?sequence=1
-    # get estimates for roll and pitch
-    # calculate rate of change of r, p y
     control_input = R @ np.array([gyro.x, gyro.y, gyro.z]).reshape(-1, 1)
     return control_input
 
 
-def main():
-    waypoints, time, sensors = generate_environment(
-        f"{ABS_PATH}/../../data/5e15730aa280850006f3d005.txt"
+def filter_accelation(
+    timestep: datetime, gravity: Measurement, accel: Measurement, alpha: float = 0.8
+) -> [Measurement, Measurement]:
+    """
+    Filter to remove gravitational acceleration from the accelerometer reasings
+
+    Involves:
+        - Isolating the force of gravity with a low-pass filter
+        - Removing the gravity contribution with a high-pass filter
+    """
+    gravity = Measurement(
+        timestep,
+        x=alpha * gravity.x + (1 - alpha) * accel.x,
+        y=alpha * gravity.y + (1 - alpha) * accel.y,
+        z=alpha * gravity.z + (1 - alpha) * accel.z,
     )
-    start_pos = waypoints[time[0]]
+    lin_accel_t = Measurement(
+        timestep,
+        x=accel.x - gravity.x,
+        y=accel.y - gravity.y,
+        z=accel.z - gravity.z,
+    )
+    return lin_accel_t, gravity
+
+
+def main():
+    fdir = f"{ABS_PATH}/../../data/indoor_robot/"
+    config_file = "sensor_config.txt"
+    files = [f for f in os.listdir(fdir) if f != config_file]
+
+    sensors = generate_sensors(fdir + config_file)
+    waypoints, time = generate_environment(
+        file_path=fdir + random.choice(files), sensors=sensors
+    )
+    start_pos = (
+        waypoints[time[0]] if waypoints.get(time[0]) else Waypoint(time[0], 0, 0)
+    )
 
     accel_sensor = sensors["accelerometer"]
     gyro_sensor = sensors["gyroscope"]
@@ -105,9 +114,9 @@ def main():
     matrix_transform = np.array(
         [
             # x, y, z, vx, vy, vz, ax, ay, az, r, p, y, r_bias, p_bias, y_bias
-            [0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0],
-            [0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0],
-            [0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0],
+            [0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0],  # ax
+            [0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0],  # ay
+            [0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0],  # az
         ]
     )
     kf = KalmanFilter(
@@ -116,11 +125,15 @@ def main():
     )
 
     first_iter = True
-    for i, t in enumerate(time):
+    gravity = Measurement(time[0], 0, 0, 0)
+    prev_t = None
+    for t in time:
         if (accel_t := accel_sensor.poll(t)) is None or (
             gyro_t := gyro_sensor.poll(t)
         ) is None:
             continue
+
+        lin_accel_t, gravity = filter_accelation(t, gravity, accel_t)
 
         if first_iter:
             kf.init_state(
@@ -128,15 +141,16 @@ def main():
                 state=np.array(
                     [start_pos.x, start_pos.y, start_pos.z]
                     + [1e-5] * 3
-                    + [accel_t.x, accel_t.y, accel_t.z]
+                    + [lin_accel_t.x, lin_accel_t.y, lin_accel_t.z]
                     + [1e-5] * 6
                 ).reshape(-1, 1),
                 estimate_uncertainty=np.full(shape=(15, 15), fill_value=0.99),
             )
             first_iter = False
+            prev_t = t
             continue
 
-        dt = (t - time[i - 1]).total_seconds()
+        dt = (t - prev_t).total_seconds()
 
         control_input = generate_control_input(t, accel_t, gyro_t)
         control_transform = np.array(
@@ -180,8 +194,10 @@ def main():
                 [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1],  # yb
             ]
         )
-        observation = np.array([accel_t.x, accel_t.y, accel_t.z]).reshape(-1, 1)
-        measurement_uncertainty = np.diag(
+        observation = np.array([lin_accel_t.x, lin_accel_t.y, lin_accel_t.z]).reshape(
+            -1, 1
+        )
+        observation_uncertainty = np.diag(
             [
                 accel_sensor.maximum_range,
                 accel_sensor.maximum_range,
@@ -193,18 +209,62 @@ def main():
             t=t,
             control_input=control_input,
             control_transform=control_transform,
-            measurement_uncertainty=measurement_uncertainty,
+            measurement_uncertainty=observation_uncertainty,
             state_transition_transform=state_transition,
             observation=observation,
         )
+        prev_t = t
 
-    state = kf.state_history
-    uncertainty = kf.uncertainty_history
-    gain = kf.gain_history
-    plot_3d_timeseries(time, state[:, 0], state[:, 1], state[:, 2])
-    plot_3d_timeseries(time, state[:, 9], state[:, 10], state[:, 11])
-    plot_3d_timeseries(time, gain[:, 6, 0], gain[:, 7, 1], gain[:, 8, 2])
-    plot_3d_timeseries(time, uncertainty[:, 0], uncertainty[:, 1], uncertainty[:, 2])
+    plot_state(kf)
+
+
+def plot_state(kf: KalmanFilter):
+    time: list[datetime] = kf.timesteps
+    state: NDArray = kf.state_history
+    uncertainty: NDArray = kf.uncertainty_history
+    gain: NDArray = kf.gain_history
+    inputs: NDArray = kf.input_history
+    observations: NDArray = kf.observation_history
+
+    plot_3d_timeseries(
+        time,
+        x=state[:, 0],
+        y=state[:, 1],
+        z=state[:, 2],
+        title="Position over time",
+    )
+    plot_3d_timeseries(
+        time, gain[:, 6, 0], gain[:, 7, 1], gain[:, 8, 2], "Kalman Gain over time"
+    )
+    return
+    plot_2d_timeseries(
+        time,
+        x=inputs[:, 0],
+        y=inputs[:, 1],
+        z=inputs[:, 2],
+        title="Euler rates over time",
+    )
+    plot_2d_timeseries(
+        time,
+        x=observations[:, 0],
+        y=observations[:, 1],
+        z=observations[:, 2],
+        title="Linear Acceleration over time",
+    )
+    plot_2d_timeseries(
+        time,
+        x=state[:, 6],
+        y=state[:, 7],
+        z=state[:, 8],
+        title="Filtered Acceleration over time",
+    )
+    plot_3d_timeseries(
+        time,
+        uncertainty[:, 0],
+        uncertainty[:, 1],
+        uncertainty[:, 2],
+        "Position uncertainty over time",
+    )
 
 
 main()

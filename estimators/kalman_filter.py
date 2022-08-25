@@ -1,6 +1,7 @@
 from datetime import datetime
 
 import numpy as np
+from numpy.typing import NDArray
 
 from .sensors import Measurement
 
@@ -12,29 +13,29 @@ class KalmanFilter:
 
     def __init__(
         self,
-        process_noise_covariance: np.array,
-        matrix_transform: np.array,
-        measurement_uncertainty: np.array = None,
-        state_transition_transform: np.array = None,
-        control_transform: np.array = None,
+        process_noise_covariance: NDArray,
+        matrix_transform: NDArray,
+        measurement_uncertainty: NDArray = None,
+        state_transition_transform: NDArray = None,
+        control_transform: NDArray = None,
     ):
         self._state_transition_transform = state_transition_transform
         self._control_transform = control_transform
         self._matrix_transform = matrix_transform
         self._process_noise_covariance = process_noise_covariance
         self._measurement_uncertainty = measurement_uncertainty
-        self._state: dict[datetime, np.array] = {}
-        self._estimate_uncertainty: dict[datetime, np.array] = {}
-        self._observation: dict[datetime, np.array] = {}
-        self._control_input: dict[datetime, np.array] = {}
-        self._state_pred: dict[datetime, np.array] = {}
-        self._estimate_uncertainty_pred: dict[datetime, np.array] = {}
-        self._kalman_gain: dict[datetime, np.array] = {}
+        self._state: dict[datetime, NDArray] = {}
+        self._estimate_uncertainty: dict[datetime, NDArray] = {}
+        self._observation: dict[datetime, NDArray] = {}
+        self._control_input: dict[datetime, NDArray] = {}
+        self._state_pred: dict[datetime, NDArray] = {}
+        self._estimate_uncertainty_pred: dict[datetime, NDArray] = {}
+        self._kalman_gain: dict[datetime, NDArray] = {}
 
     def init_state(
         self,
-        state: np.array,
-        estimate_uncertainty: np.array,
+        state: NDArray,
+        estimate_uncertainty: NDArray,
         t: datetime = datetime.now(),
     ):
         self._state[t] = state
@@ -43,12 +44,12 @@ class KalmanFilter:
 
     def run(
         self,
-        control_input: np.array,
-        observation: np.array,
+        control_input: NDArray,
+        observation: NDArray,
         t: datetime = datetime.now(),
-        state_transition_transform: np.array = None,
-        control_transform: np.array = None,
-        measurement_uncertainty: np.array = None,
+        state_transition_transform: NDArray = None,
+        control_transform: NDArray = None,
+        measurement_uncertainty: NDArray = None,
     ):
         self._control_input[t] = control_input
         self._observation[t] = observation
@@ -59,8 +60,8 @@ class KalmanFilter:
     def _predict(
         self,
         t: datetime = datetime.now(),
-        state_transition_transform: np.array = None,
-        control_transform: np.array = None,
+        state_transition_transform: NDArray = None,
+        control_transform: NDArray = None,
     ) -> None:
         """
         Predict the state and estimate uncertainty
@@ -71,8 +72,8 @@ class KalmanFilter:
     def _predict_state(
         self,
         t: datetime,
-        state_transition_transform: np.array = None,
-        control_transform: np.array = None,
+        state_transition_transform: NDArray = None,
+        control_transform: NDArray = None,
     ) -> None:
         """
         Extrapolate the state of the system at time t
@@ -95,7 +96,7 @@ class KalmanFilter:
     def _predict_uncertainty(
         self,
         t: datetime,
-        state_transition_transform: np.array = None,
+        state_transition_transform: NDArray = None,
     ) -> None:
         """
         Extrapolate the uncertainty of the system at time t
@@ -117,7 +118,7 @@ class KalmanFilter:
     def _update(
         self,
         t: datetime = datetime.now(),
-        measurement_uncertainty: np.array = None,
+        measurement_uncertainty: NDArray = None,
     ) -> None:
         """
         Update the state estimate based on a set of observations
@@ -129,7 +130,7 @@ class KalmanFilter:
     def _update_kalman_gain(
         self,
         t: datetime,
-        measurement_uncertainty: np.array = None,
+        measurement_uncertainty: NDArray = None,
     ) -> None:
         measurement_uncertainty = (
             measurement_uncertainty
@@ -163,33 +164,45 @@ class KalmanFilter:
         )
 
     @property
-    def state(self) -> np.array:
+    def state(self) -> NDArray:
         return self._state[self._prev_t]
 
     @property
-    def uncertainty(self) -> np.array:
+    def uncertainty(self) -> NDArray:
         return self._estimate_uncertainty[self._prev_t]
 
     @property
-    def predicted_state(self) -> np.array:
+    def predicted_state(self) -> NDArray:
         return self._state_pred[self._prev_t]
 
     @property
-    def predicted_uncertainty(self) -> np.array:
+    def predicted_uncertainty(self) -> NDArray:
         return self._estimate_uncertainty_pred[self._prev_t]
 
     @property
-    def kalman_gain(self) -> np.array:
+    def kalman_gain(self) -> NDArray:
         return self._kalman_gain[self._prev_t]
 
     @property
-    def state_history(self) -> np.array:
+    def state_history(self) -> NDArray:
         return np.vstack([s.T for s in self._state.values()])
 
     @property
-    def gain_history(self) -> np.array:
-        return np.array([g for g in self._kalman_gain.values()])
+    def gain_history(self) -> NDArray:
+        return np.array(self._kalman_gain.values())
 
     @property
-    def uncertainty_history(self) -> np.array:
+    def observation_history(self) -> NDArray:
+        return np.vstack([o.T for o in self._observation.values()])
+
+    @property
+    def input_history(self) -> NDArray:
+        return np.vstack([i.T for i in self._control_input.values()])
+
+    @property
+    def uncertainty_history(self) -> NDArray:
         return np.vstack([np.diag(s) for s in self._estimate_uncertainty.values()])
+
+    @property
+    def timesteps(self) -> list[datetime]:
+        return list(self._observation.keys())

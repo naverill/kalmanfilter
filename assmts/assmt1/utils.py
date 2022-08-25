@@ -10,6 +10,7 @@ from estimators.sensors import (
     MagnetometerUncalibrated,
     Measurement,
     RotationVector,
+    Sensor,
     Waypoint,
 )
 
@@ -47,23 +48,34 @@ def process_measurement(reading: str):
     )
 
 
-def generate_environment(file_path):
-    waypoints = {}
+def generate_sensors(sensor_config: str) -> dict[str, Sensor]:
     sensors = {
         "rotationvector": RotationVector(
             "R1", "RotationVector", "1", "BOSCH", 0.0, 1, 0
         ),
     }
+
+    with open(sensor_config, "r", encoding="utf-8") as f:
+        lines = f.readlines()
+
+    for line in lines:
+        if line.find("type:") != -1:
+            sensor = create_sensor(line)
+            if sensor:
+                sensors[sensor.type.lower()] = sensor
+
+    return sensors
+
+
+def generate_environment(file_path: str, sensors: dict[str, Sensor]):
+    waypoints = {}
     time_ = set()
     with open(file_path, "r", encoding="utf-8") as f:
         lines = f.readlines()
 
     for line in lines:
         if line.startswith("#"):
-            if line.find("type:") != -1:
-                sensor = create_sensor(line)
-                if sensor:
-                    sensors[sensor.type.lower()] = sensor
+            continue
         else:
             t, sensor_type, measurement = process_measurement(line)
             if sensor_type == "waypoint":
@@ -71,4 +83,4 @@ def generate_environment(file_path):
             elif sensor := sensors.get(sensor_type):
                 sensor.add_reading(t, *measurement)
             time_.add(t)
-    return waypoints, sorted(list(time_)), sensors
+    return waypoints, sorted(list(time_))
