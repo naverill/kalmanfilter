@@ -11,6 +11,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 import plotly.graph_objects as go
+from plotly.subplots import make_subplots
 from scipy import integrate
 from scipy.spatial.transform import Rotation as Rot
 from utils import generate_environment, generate_sensors
@@ -30,8 +31,7 @@ from estimators.sensors import (
 
 ABS_PATH = Path(__file__).parent.resolve()
 random.seed(12345)
-
-G = +9.81  # gravitational acceleration (m/s^2)
+G = 9.81
 
 
 def plot_3d_timeseries(
@@ -39,6 +39,7 @@ def plot_3d_timeseries(
     x: list[float],
     y: list[float],
     z: list[float],
+    title: str,
     x_truth: list[float] = None,
     y_truth: list[float] = None,
     z_truth: list[float] = None,
@@ -70,27 +71,50 @@ def plot_3d_timeseries(
             mode="markers",
         )
     )
-    fig.update_layout(scene=dict(yaxis_title="z", zaxis_title="y"))
+    fig.update_layout(
+        scene=dict(yaxis_title="z", zaxis_title="y"),
+        height=1200,
+        width=1600,
+        title_text=title,
+    )
+    fig.show()
+
+
+def plot_2d_timeseries(
+    time: list[datetime], x: list[float], y: list[float], z: list[float], title: str
+):
+    fig = make_subplots(rows=3, cols=1, subplot_titles=("X", "Y", "Z"))
+
+    fig.add_trace(go.Scatter(x=time, y=x), row=1, col=1)
+
+    fig.add_trace(go.Scatter(x=time, y=y), row=2, col=1)
+
+    fig.add_trace(go.Scatter(x=time, y=z), row=3, col=1)
+
+    fig.update_layout(height=1200, width=1600, title_text=title)
     fig.show()
 
 
 def generate_control_input(
     time: datetime, accel: Measurement, gyro: Measurement
 ) -> np.array:
-    # https://escholarship.org/content/qt5rs5t0sf/qt5rs5t0sf_noSplash_e1588dedf177d86a3652374bc997314f.pdf
+    """
+    control vector is  euler angle velocities of the IMU in world frame
+    https://calhoun.nps.edu/bitstream/handle/10945/34427/McGhee_bachmann_zyda_rigid_2000.pdf?sequence=1
+    https://escholarship.org/content/qt5rs5t0sf/qt5rs5t0sf_noSplash_e1588dedf177d86a3652374bc997314f.pdf
+    https://liqul.github.io/blog/assets/rotation.pdf
+    https://au.mathworks.com/help/aeroblks/customvariablemass6dofeulerangles.html
+    """
+    # get estimates for roll and pitch
     r_est = np.arctan2(accel.y, accel.z)
     p_est = np.arcsin(accel.x / G)
-    # https://liqul.github.io/blog/assets/rotation.pdf
     R = np.array(
         [
-            [1, np.sin(p_est) * np.tan(r_est), np.cos(p_est) * np.tan(r_est)],
-            [0, np.cos(r_est), -np.sin(r_est)],
-            [0, np.sin(r_est) / np.cos(p_est), np.cos(r_est) / np.cos(p_est)],
+            [1, np.sin(r_est) * np.tan(p_est), np.cos(r_est) * np.tan(p_est)],
+            [0, np.cos(p_est), -np.sin(p_est)],
+            [0, np.sin(p_est) / np.cos(r_est), np.cos(p_est) / np.cos(r_est)],
         ]
     )
-    # control vector is  euler angle velocities of the IMU in world frame
-    # https://calhoun.nps.edu/bitstream/handle/10945/34427/McGhee_bachmann_zyda_rigid_2000.pdf?sequence=1
-    # get estimates for roll and pitch
     # calculate rate of change of r, p y
     control_input = R @ np.array([gyro.x, gyro.y, gyro.z]).reshape(-1, 1)
     return control_input
@@ -140,6 +164,8 @@ def main():
 
     first_iter = True
     gravity = Measurement(time[0], 0, 0, 0)
+    accel = []
+    gyro = []
     for i, t in enumerate(time):
         if (accel_t := accel_sensor.poll(t)) is None or (
             gyro_t := gyro_sensor.poll(t)
@@ -160,6 +186,8 @@ def main():
             y=accel_t.y - gravity.y,
             z=accel_t.z - gravity.z,
         )
+        accel.append([accel_t.x, accel_t.y, accel_t.z])
+        gyro.append([gyro_t.x, gyro_t.y, gyro_t.z])
 
         if first_iter:
             kf.init_state(
@@ -242,6 +270,9 @@ def main():
     state = kf.state_history
     uncertainty = kf.uncertainty_history
     gain = kf.gain_history
+    inputs = kf.input_history
+    observations = kf.observation_history
+
     plot_3d_timeseries(
         time,
         x=state[:, 0],
@@ -250,10 +281,52 @@ def main():
         x_truth=[point.x for point in waypoints.values()],
         y_truth=[point.y for point in waypoints.values()],
         z_truth=[0 for _ in waypoints.values()],
+        title="Position over time",
     )
-    plot_3d_timeseries(time, state[:, 9], state[:, 10], state[:, 11])
-    plot_3d_timeseries(time, gain[:, 6, 0], gain[:, 7, 1], gain[:, 8, 2])
-    plot_3d_timeseries(time, uncertainty[:, 0], uncertainty[:, 1], uncertainty[:, 2])
+    gyro = np.array(gyro)
+    accel = np.array(accel)
+    plot_2d_timeseries(
+        time, x=gyro[:, 0], y=gyro[:, 1], z=gyro[:, 2], title="Gyro over time"
+    )
+    plot_2d_timeseries(
+        time,
+        x=inputs[:, 0],
+        y=inputs[:, 1],
+        z=inputs[:, 2],
+        title="Euler rates over time",
+    )
+    plot_2d_timeseries(
+        time,
+        x=observations[:, 0],
+        y=observations[:, 1],
+        z=observations[:, 2],
+        title="Linear Acceleration over time",
+    )
+    plot_2d_timeseries(
+        time,
+        x=accel[:, 0],
+        y=accel[:, 1],
+        z=accel[:, 2],
+        title="Acceleration over time",
+    )
+    plot_2d_timeseries(
+        time,
+        x=state[:, 6],
+        y=state[:, 7],
+        z=state[:, 8],
+        title="Filtered Acceleration over time",
+    )
+    return
+    plot_3d_timeseries(
+        time, gain[:, 6, 0], gain[:, 7, 1], gain[:, 8, 2], "Kalman Gain over time"
+    )
+    plot_3d_timeseries(
+        time,
+        uncertainty[:, 0],
+        uncertainty[:, 1],
+        uncertainty[:, 2],
+        "Position uncertainty over time",
+    )
 
 
 main()
