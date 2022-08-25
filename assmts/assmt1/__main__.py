@@ -9,6 +9,7 @@ from enum import Enum
 from pathlib import Path
 
 import numpy as np
+from numpy.typing import NDArray
 from utils import generate_environment, generate_sensors
 
 from estimators.kalman_filter import KalmanFilter
@@ -35,14 +36,17 @@ def generate_control_input(
 ) -> np.array:
     """
     control vector is  euler angle velocities of the IMU in world frame
-    https://calhoun.nps.edu/bitstream/handle/10945/34427/McGhee_bachmann_zyda_rigid_2000.pdf?sequence=1
+
+    pitch, roll estimation:
     https://escholarship.org/content/qt5rs5t0sf/qt5rs5t0sf_noSplash_e1588dedf177d86a3652374bc997314f.pdf
-    https://liqul.github.io/blog/assets/rotation.pdf
+
+    body rate to euler transformation:
     https://au.mathworks.com/help/aeroblks/customvariablemass6dofeulerangles.html
     """
     # get estimates for roll and pitch
     r_est = np.arctan2(accel.y, np.sqrt(accel.x**2 + accel.z**2))
     p_est = np.arctan2(accel.x, np.sqrt(accel.y**2 + accel.z**2))
+    # calculate rate of change of euler angles
     R = np.array(
         [
             [1, np.sin(r_est) * np.tan(p_est), np.cos(r_est) * np.tan(p_est)],
@@ -50,9 +54,33 @@ def generate_control_input(
             [0, np.sin(p_est) / np.cos(r_est), np.cos(p_est) / np.cos(r_est)],
         ]
     )
-    # calculate rate of change of r, p y
     control_input = R @ np.array([gyro.x, gyro.y, gyro.z]).reshape(-1, 1)
     return control_input
+
+
+def filter_accelation(
+    timestep: datetime, gravity: Measurement, accel: Measurement, alpha: float = 0.8
+) -> [Measurement, Measurement]:
+    """
+    Filter to remove gravitational acceleration from the accelerometer reasings
+
+    Involves:
+        - Isolating the force of gravity with a low-pass filter
+        - Removing the gravity contribution with a high-pass filter
+    """
+    gravity = Measurement(
+        timestep,
+        x=alpha * gravity.x + (1 - alpha) * accel.x,
+        y=alpha * gravity.y + (1 - alpha) * accel.y,
+        z=alpha * gravity.z + (1 - alpha) * accel.z,
+    )
+    lin_accel_t = Measurement(
+        timestep,
+        x=accel.x - gravity.x,
+        y=accel.y - gravity.y,
+        z=accel.z - gravity.z,
+    )
+    return lin_accel_t, gravity
 
 
 def main():
@@ -68,7 +96,6 @@ def main():
         waypoints[time[0]] if waypoints.get(time[0]) else Waypoint(time[0], 0, 0)
     )
 
-    alpha = 0.8
     accel_sensor = sensors["accelerometer"]
     gyro_sensor = sensors["gyroscope"]
 
@@ -87,9 +114,9 @@ def main():
     matrix_transform = np.array(
         [
             # x, y, z, vx, vy, vz, ax, ay, az, r, p, y, r_bias, p_bias, y_bias
-            [0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0],
-            [0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0],
-            [0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0],
+            [0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0],  # ax
+            [0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0],  # ay
+            [0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0],  # az
         ]
     )
     kf = KalmanFilter(
@@ -99,30 +126,14 @@ def main():
 
     first_iter = True
     gravity = Measurement(time[0], 0, 0, 0)
-    accel = []
-    gyro = []
-    for i, t in enumerate(time):
+    prev_t = None
+    for t in time:
         if (accel_t := accel_sensor.poll(t)) is None or (
             gyro_t := gyro_sensor.poll(t)
         ) is None:
             continue
 
-        # Isolate the force of gravity with a low-pass filter
-        gravity = Measurement(
-            t,
-            x=alpha * gravity.x + (1 - alpha) * accel_t.x,
-            y=alpha * gravity.y + (1 - alpha) * accel_t.y,
-            z=alpha * gravity.z + (1 - alpha) * accel_t.z,
-        )
-        # Remove the gravity contribution with a high-pass filter
-        lin_accel_t = Measurement(
-            t,
-            x=accel_t.x - gravity.x,
-            y=accel_t.y - gravity.y,
-            z=accel_t.z - gravity.z,
-        )
-        accel.append([accel_t.x, accel_t.y, accel_t.z])
-        gyro.append([gyro_t.x, gyro_t.y, gyro_t.z])
+        lin_accel_t, gravity = filter_accelation(t, gravity, accel_t)
 
         if first_iter:
             kf.init_state(
@@ -136,11 +147,12 @@ def main():
                 estimate_uncertainty=np.full(shape=(15, 15), fill_value=0.99),
             )
             first_iter = False
+            prev_t = t
             continue
 
-        dt = (t - time[i - 1]).total_seconds()
+        dt = (t - prev_t).total_seconds()
 
-        control_input = generate_control_input(t, lin_accel_t, gyro_t)
+        control_input = generate_control_input(t, accel_t, gyro_t)
         control_transform = np.array(
             [
                 # r_dot      p_dot      y_dot
@@ -185,7 +197,7 @@ def main():
         observation = np.array([lin_accel_t.x, lin_accel_t.y, lin_accel_t.z]).reshape(
             -1, 1
         )
-        measurement_uncertainty = np.diag(
+        observation_uncertainty = np.diag(
             [
                 accel_sensor.maximum_range,
                 accel_sensor.maximum_range,
@@ -197,43 +209,34 @@ def main():
             t=t,
             control_input=control_input,
             control_transform=control_transform,
-            measurement_uncertainty=measurement_uncertainty,
+            measurement_uncertainty=observation_uncertainty,
             state_transition_transform=state_transition,
             observation=observation,
         )
+        prev_t = t
 
-    state = kf.state_history
-    uncertainty = kf.uncertainty_history
-    gain = kf.gain_history
-    inputs = kf.input_history
-    observations = kf.observation_history
+    plot_state(kf)
+
+
+def plot_state(kf: KalmanFilter):
+    time: list[datetime] = kf.timesteps
+    state: NDArray = kf.state_history
+    uncertainty: NDArray = kf.uncertainty_history
+    gain: NDArray = kf.gain_history
+    inputs: NDArray = kf.input_history
+    observations: NDArray = kf.observation_history
 
     plot_3d_timeseries(
         time,
         x=state[:, 0],
         y=state[:, 1],
         z=state[:, 2],
-        x_truth=[point.x for point in waypoints.values()],
-        y_truth=[point.y for point in waypoints.values()],
-        z_truth=[0 for _ in waypoints.values()],
         title="Position over time",
     )
     plot_3d_timeseries(
         time, gain[:, 6, 0], gain[:, 7, 1], gain[:, 8, 2], "Kalman Gain over time"
     )
     return
-    plot_3d_timeseries(
-        time,
-        uncertainty[:, 0],
-        uncertainty[:, 1],
-        uncertainty[:, 2],
-        "Position uncertainty over time",
-    )
-    gyro = np.array(gyro)
-    accel = np.array(accel)
-    plot_2d_timeseries(
-        time, x=gyro[:, 0], y=gyro[:, 1], z=gyro[:, 2], title="Gyro over time"
-    )
     plot_2d_timeseries(
         time,
         x=inputs[:, 0],
@@ -250,17 +253,17 @@ def main():
     )
     plot_2d_timeseries(
         time,
-        x=accel[:, 0],
-        y=accel[:, 1],
-        z=accel[:, 2],
-        title="Acceleration over time",
-    )
-    plot_2d_timeseries(
-        time,
         x=state[:, 6],
         y=state[:, 7],
         z=state[:, 8],
         title="Filtered Acceleration over time",
+    )
+    plot_3d_timeseries(
+        time,
+        uncertainty[:, 0],
+        uncertainty[:, 1],
+        uncertainty[:, 2],
+        "Position uncertainty over time",
     )
 
 

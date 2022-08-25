@@ -201,3 +201,7 @@ class KalmanFilter:
     @property
     def uncertainty_history(self) -> np.array:
         return np.vstack([np.diag(s) for s in self._estimate_uncertainty.values()])
+
+    @property
+    def timesteps(self) -> list[datetime]:
+        return list(self._observation.keys())

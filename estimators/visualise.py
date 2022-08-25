@@ -1,14 +1,15 @@
 from datetime import datetime
 
 import plotly.graph_objects as go
+from numpy.typing import NDArray
 from plotly.subplots import make_subplots
 
 
 def plot_3d_timeseries(
     time: list[datetime],
-    x: list[float],
-    y: list[float],
-    z: list[float],
+    x: NDArray,
+    y: NDArray,
+    z: NDArray,
     title: str,
     x_truth: list[float] = None,
     y_truth: list[float] = None,
@@ -51,7 +52,7 @@ def plot_3d_timeseries(
 
 
 def plot_2d_timeseries(
-    time: list[datetime], x: list[float], y: list[float], z: list[float], title: str
+    time: list[datetime], x: NDArray, y: NDArray, z: NDArray, title: str
 ):
     fig = make_subplots(rows=3, cols=1, subplot_titles=("X", "Y", "Z"))
 
