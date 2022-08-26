@@ -189,7 +189,7 @@ class KalmanFilter:
 
     @property
     def gain_history(self) -> NDArray:
-        return np.array(self._kalman_gain.values())
+        return np.array([g for g in self._kalman_gain.values()])
 
     @property
     def observation_history(self) -> NDArray:

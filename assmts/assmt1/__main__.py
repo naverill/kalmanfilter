@@ -104,10 +104,20 @@ def main():
     process_noise_covariance = np.diag(
         np.hstack(
             [
-                np.random.normal(size=(6,)),
+                np.array(
+                    [
+                        accel_sensor.maximum_range,
+                    ]
+                    * 6
+                ),
                 np.diag(accel_sensor.covariance),
                 np.diag(gyro_sensor.covariance),
-                np.random.normal(size=(3,)),
+                np.array(
+                    [
+                        gyro_sensor.maximum_range,
+                    ]
+                    * 3
+                ),
             ]
         )
     )
@@ -226,6 +236,7 @@ def plot_state(kf: KalmanFilter):
     inputs: NDArray = kf.input_history
     observations: NDArray = kf.observation_history
 
+    print(gain)
     plot_3d_timeseries(
         time,
         x=state[:, 0],
