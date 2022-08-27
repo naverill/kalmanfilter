@@ -32,7 +32,10 @@ G = 9.81
 
 
 def generate_control_input(
-    time: datetime, accel: Measurement, gyro: Measurement
+    time: datetime,
+    r_est: float,
+    p_est: float,
+    gyro: Measurement,
 ) -> np.array:
     """
     control vector is  euler angle velocities of the IMU in world frame
@@ -43,9 +46,6 @@ def generate_control_input(
     body rate to euler transformation:
     https://au.mathworks.com/help/aeroblks/customvariablemass6dofeulerangles.html
     """
-    # get estimates for roll and pitch
-    r_est = np.arctan2(accel.y, np.sqrt(accel.x**2 + accel.z**2))
-    p_est = np.arctan2(accel.x, np.sqrt(accel.y**2 + accel.z**2))
     # calculate rate of change of euler angles
     R = np.array(
         [
@@ -127,6 +127,8 @@ def main():
             [0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0],  # ax
             [0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0],  # ay
             [0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0],  # az
+            [0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0],  # az
+            [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0],  # az
         ]
     )
     kf = KalmanFilter(
@@ -154,7 +156,12 @@ def main():
                     + [lin_accel_t.x, lin_accel_t.y, lin_accel_t.z]
                     + [1e-5] * 6
                 ).reshape(-1, 1),
-                estimate_uncertainty=np.full(shape=(15, 15), fill_value=0.99),
+                estimate_uncertainty=np.diag(
+                    [
+                        1000,
+                    ]
+                    * 15
+                ),
             )
             first_iter = False
             prev_t = t
@@ -162,7 +169,10 @@ def main():
 
         dt = (t - prev_t).total_seconds()
 
-        control_input = generate_control_input(t, accel_t, gyro_t)
+        # get estimates for roll and pitch
+        r_est = np.arctan2(accel_t.y, np.sqrt(accel_t.x**2 + accel_t.z**2))
+        p_est = np.arctan2(accel_t.x, np.sqrt(accel_t.y**2 + accel_t.z**2))
+        control_input = generate_control_input(t, r_est, p_est, gyro_t)
         control_transform = np.array(
             [
                 # r_dot      p_dot      y_dot
@@ -204,11 +214,13 @@ def main():
                 [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1],  # yb
             ]
         )
-        observation = np.array([lin_accel_t.x, lin_accel_t.y, lin_accel_t.z]).reshape(
-            -1, 1
-        )
+        observation = np.array(
+            [lin_accel_t.x, lin_accel_t.y, lin_accel_t.z, r_est, p_est]
+        ).reshape(-1, 1)
         observation_uncertainty = np.diag(
             [
+                accel_sensor.maximum_range,
+                accel_sensor.maximum_range,
                 accel_sensor.maximum_range,
                 accel_sensor.maximum_range,
                 accel_sensor.maximum_range,
@@ -236,7 +248,6 @@ def plot_state(kf: KalmanFilter):
     inputs: NDArray = kf.input_history
     observations: NDArray = kf.observation_history
 
-    print(gain)
     plot_3d_timeseries(
         time,
         x=state[:, 0],

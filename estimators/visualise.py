@@ -11,9 +11,6 @@ def plot_3d_timeseries(
     y: NDArray,
     z: NDArray,
     title: str,
-    x_truth: list[float] = None,
-    y_truth: list[float] = None,
-    z_truth: list[float] = None,
 ):
     fig = go.Figure(
         data=[
@@ -33,17 +30,7 @@ def plot_3d_timeseries(
             )
         ],
     )
-    fig.add_trace(
-        go.Scatter3d(
-            x=x_truth,
-            y=y_truth,
-            z=z_truth,
-            marker=dict(size=8, cmax=39, cmin=0, color="black"),
-            mode="markers",
-        )
-    )
     fig.update_layout(
-        scene=dict(yaxis_title="z", zaxis_title="y"),
         height=1200,
         width=1600,
         title_text=title,
