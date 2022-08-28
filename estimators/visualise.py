@@ -51,3 +51,16 @@ def plot_2d_timeseries(
 
     fig.update_layout(height=1200, width=1600, title_text=title)
     fig.show()
+
+
+def plot_uncertainty_timeseries(
+    time: list[datetime], state: NDArray, uncertainty: NDArray, title: str
+):
+    fig = make_subplots(rows=3, cols=1, subplot_titles=("Value", "Uncertainty"))
+
+    fig.add_trace(go.Scatter(x=time, y=state), row=1, col=1)
+
+    fig.add_trace(go.Scatter(x=time, y=uncertainty), row=2, col=1)
+
+    fig.update_layout(height=1200, width=1600, title_text=title)
+    fig.show()

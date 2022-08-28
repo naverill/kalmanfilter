@@ -24,14 +24,17 @@ from estimators.sensors import (
     RotationVector,
     Waypoint,
 )
-from estimators.visualise import plot_2d_timeseries, plot_3d_timeseries
+from estimators.visualise import (
+    plot_2d_timeseries,
+    plot_3d_timeseries,
+    plot_uncertainty_timeseries,
+)
 
 ABS_PATH = Path(__file__).parent.resolve()
-random.seed(12345)
 G = 9.81
 
 
-def generate_control_input(
+def generate_euler_rates(
     time: datetime,
     r_est: float,
     p_est: float,
@@ -54,8 +57,8 @@ def generate_control_input(
             [0, np.sin(p_est) / np.cos(r_est), np.cos(p_est) / np.cos(r_est)],
         ]
     )
-    control_input = R @ np.array([gyro.x, gyro.y, gyro.z]).reshape(-1, 1)
-    return control_input
+    euler_rate = R @ np.array([gyro.x, gyro.y, gyro.z]).reshape(-1, 1)
+    return euler_rate
 
 
 def filter_accelation(
@@ -99,45 +102,25 @@ def main():
     accel_sensor = sensors["accelerometer"]
     gyro_sensor = sensors["gyroscope"]
 
-    # state = [x, y, z, vx, vy, vz, ax, ay, az, r, p, y, rb, pb, yb]
-    # observation = [ax, ay, ax]
-    process_noise_covariance = np.diag(
-        np.hstack(
-            [
-                np.array(
-                    [
-                        accel_sensor.maximum_range,
-                    ]
-                    * 6
-                ),
-                np.diag(accel_sensor.covariance),
-                np.diag(gyro_sensor.covariance),
-                np.array(
-                    [
-                        gyro_sensor.maximum_range,
-                    ]
-                    * 3
-                ),
-            ]
-        )
-    )
     matrix_transform = np.array(
         [
-            # x, y, z, vx, vy, vz, ax, ay, az, r, p, y, r_bias, p_bias, y_bias
-            [0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0],  # ax
-            [0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0],  # ay
-            [0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0],  # az
-            [0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0],  # az
-            [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0],  # az
+            # x, y, z, vx, vy, vz, ax, ay, az, r, p, y, vr, vp, vy, r_bias, p_bias, y_bias
+            [0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],  # ax
+            [0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],  # ay
+            [0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0],  # az
+            [0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0],  # r
+            [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0],  # p
+            [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0],  # vr
+            [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0],  # vp
+            [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0],  # vy
         ]
     )
     kf = KalmanFilter(
         matrix_transform=matrix_transform,
-        process_noise_covariance=process_noise_covariance,
     )
 
     first_iter = True
-    gravity = Measurement(time[0], 0, 0, 0)
+    gravity = Measurement(time[0], 0, 0, G)
     prev_t = None
     for t in time:
         if (accel_t := accel_sensor.poll(t)) is None or (
@@ -154,13 +137,13 @@ def main():
                     [start_pos.x, start_pos.y, start_pos.z]
                     + [1e-5] * 3
                     + [lin_accel_t.x, lin_accel_t.y, lin_accel_t.z]
-                    + [1e-5] * 6
+                    + [1e-5] * 9
                 ).reshape(-1, 1),
                 estimate_uncertainty=np.diag(
                     [
                         1000,
                     ]
-                    * 15
+                    * 18
                 ),
             )
             first_iter = False
@@ -172,59 +155,106 @@ def main():
         # get estimates for roll and pitch
         r_est = np.arctan2(accel_t.y, np.sqrt(accel_t.x**2 + accel_t.z**2))
         p_est = np.arctan2(accel_t.x, np.sqrt(accel_t.y**2 + accel_t.z**2))
-        control_input = generate_control_input(t, r_est, p_est, gyro_t)
-        control_transform = np.array(
-            [
-                # r_dot      p_dot      y_dot
-                [0, 0, 0],  # x
-                [0, 0, 0],  # y
-                [0, 0, 0],  # z
-                [0, 0, 0],  # vx
-                [0, 0, 0],  # vy
-                [0, 0, 0],  # vz
-                [0, 0, 0],  # ax
-                [0, 0, 0],  # ay
-                [0, 0, 0],  # az
-                [dt, 0, 0],  # r
-                [0, dt, 0],  # p
-                [0, 0, dt],  # y
-                [0, 0, 0],  # rb
-                [0, 0, 0],  # pb
-                [0, 0, 0],  # yb
-            ]
-        )
+        euler_rates = generate_euler_rates(t, r_est, p_est, gyro_t)
+        control_input = np.array([0]).reshape(-1, 1)
+        control_transform = np.array([0] * 18).reshape(-1, 1)
 
         state_transition = np.array(
             [
-                # x  y  z   vx  vy  vz  ax  ay  az  r   p   y rb pb yb
-                [1, 0, 0, dt, 0, 0, 0.5 * dt**2, 0, 0, 0, 0, 0, 0, 0, 0],  # x
-                [0, 1, 0, 0, dt, 0, 0, 0.5 * dt**2, 0, 0, 0, 0, 0, 0, 0],  # y
-                [0, 0, 1, 0, 0, dt, 0, 0, 0.5 * dt**2, 0, 0, 0, 0, 0, 0],  # z
-                [0, 0, 0, 1, 0, 0, dt, 0, 0, 0, 0, 0, 0, 0, 0],  # vx
-                [0, 0, 0, 0, 1, 0, 0, dt, 0, 0, 0, 0, 0, 0, 0],  # vy
-                [0, 0, 0, 0, 0, 1, 0, 0, dt, 0, 0, 0, 0, 0, 0],  # vz
-                [0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0],  # ax
-                [0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0],  # ay
-                [0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0],  # az
-                [0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, -dt, 0, 0],  # r
-                [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, -dt, 0],  # p
-                [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, -dt],  # y
-                [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0],  # rb
-                [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0],  # pb
-                [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1],  # yb
+                # x  y  z   vx  vy  vz  ax  ay  az  r   p   y vr vp vy rb pb yb
+                [
+                    1,
+                    0,
+                    0,
+                    dt,
+                    0,
+                    0,
+                    0.5 * dt**2,
+                    0,
+                    0,
+                    0,
+                    0,
+                    0,
+                    0,
+                    0,
+                    0,
+                    0,
+                    0,
+                    0,
+                ],  # x
+                [
+                    0,
+                    1,
+                    0,
+                    0,
+                    dt,
+                    0,
+                    0,
+                    0.5 * dt**2,
+                    0,
+                    0,
+                    0,
+                    0,
+                    0,
+                    0,
+                    0,
+                    0,
+                    0,
+                    0,
+                ],  # y
+                [
+                    0,
+                    0,
+                    1,
+                    0,
+                    0,
+                    dt,
+                    0,
+                    0,
+                    0.5 * dt**2,
+                    0,
+                    0,
+                    0,
+                    0,
+                    0,
+                    0,
+                    0,
+                    0,
+                    0,
+                ],  # z
+                [0, 0, 0, 1, 0, 0, dt, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],  # vx
+                [0, 0, 0, 0, 1, 0, 0, dt, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],  # vy
+                [0, 0, 0, 0, 0, 1, 0, 0, dt, 0, 0, 0, 0, 0, 0, 0, 0, 0],  # vz
+                [0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],  # ax
+                [0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],  # ay
+                [0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0],  # az
+                [0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, dt, 0, 0, -dt, 0, 0],  # r
+                [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, dt, 0, 0, -dt, 0],  # p
+                [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, dt, 0, 0, -dt],  # y
+                [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0],  # vr
+                [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0],  # vp
+                [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0],  # vy
+                [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0],  # rb
+                [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0],  # pb
+                [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1],  # yb
             ]
         )
-        observation = np.array(
-            [lin_accel_t.x, lin_accel_t.y, lin_accel_t.z, r_est, p_est]
-        ).reshape(-1, 1)
-        observation_uncertainty = np.diag(
+        process_noise_covariance = (
+            state_transition
+            @ np.diag([1e-5] * 6 + [1] * 3 + [1e-5] * 9)
+            @ state_transition.T
+            * accel_sensor.maximum_range
+        )
+        observation = np.vstack(
             [
-                accel_sensor.maximum_range,
-                accel_sensor.maximum_range,
-                accel_sensor.maximum_range,
-                accel_sensor.maximum_range,
-                accel_sensor.maximum_range,
-            ],
+                np.array(
+                    [lin_accel_t.x, lin_accel_t.y, lin_accel_t.z, r_est, p_est]
+                ).reshape(-1, 1),
+                euler_rates,
+            ]
+        )
+        observation_uncertainty = np.diag(
+            [accel_sensor.maximum_range] * 5 + [gyro_sensor.maximum_range] * 3
         )
 
         kf.run(
@@ -234,6 +264,7 @@ def main():
             measurement_uncertainty=observation_uncertainty,
             state_transition_transform=state_transition,
             observation=observation,
+            process_noise_covariance=process_noise_covariance,
         )
         prev_t = t
 
@@ -245,9 +276,58 @@ def plot_state(kf: KalmanFilter):
     state: NDArray = kf.state_history
     uncertainty: NDArray = kf.uncertainty_history
     gain: NDArray = kf.gain_history
-    inputs: NDArray = kf.input_history
     observations: NDArray = kf.observation_history
 
+    if False:
+        fields = [
+            "X",
+            "Y",
+            "Z",
+            "VX",
+            "VY",
+            "VZ",
+            "AX",
+            "AY",
+            "AZ",
+            "Roll",
+            "Pitch",
+            "Yaw",
+            "Roll Rate",
+            "Pitch Rate",
+            "Yaw Rate",
+            "Roll Bias",
+            "Pitch Bias",
+            "Yaw Bias",
+        ]
+        for i, val in enumerate(fields):
+            plot_uncertainty_timeseries(
+                time,
+                state=state[:, i],
+                uncertainty=uncertainty[:, i],
+                title=f"{val} Uncertainty over time",
+            )
+
+        plot_2d_timeseries(
+            time,
+            x=observations[:, 0],
+            y=observations[:, 1],
+            z=observations[:, 2],
+            title="Linear Acceleration over time",
+        )
+        plot_2d_timeseries(
+            time,
+            x=state[:, 3],
+            y=state[:, 4],
+            z=state[:, 5],
+            title="Filtered Velocity over time",
+        )
+        plot_2d_timeseries(
+            time,
+            x=state[:, 6],
+            y=state[:, 7],
+            z=state[:, 8],
+            title="Filtered Acceleration over time",
+        )
     plot_3d_timeseries(
         time,
         x=state[:, 0],
@@ -259,34 +339,6 @@ def plot_state(kf: KalmanFilter):
         time, gain[:, 6, 0], gain[:, 7, 1], gain[:, 8, 2], "Kalman Gain over time"
     )
     return
-    plot_2d_timeseries(
-        time,
-        x=inputs[:, 0],
-        y=inputs[:, 1],
-        z=inputs[:, 2],
-        title="Euler rates over time",
-    )
-    plot_2d_timeseries(
-        time,
-        x=observations[:, 0],
-        y=observations[:, 1],
-        z=observations[:, 2],
-        title="Linear Acceleration over time",
-    )
-    plot_2d_timeseries(
-        time,
-        x=state[:, 6],
-        y=state[:, 7],
-        z=state[:, 8],
-        title="Filtered Acceleration over time",
-    )
-    plot_3d_timeseries(
-        time,
-        uncertainty[:, 0],
-        uncertainty[:, 1],
-        uncertainty[:, 2],
-        "Position uncertainty over time",
-    )
 
 
 main()

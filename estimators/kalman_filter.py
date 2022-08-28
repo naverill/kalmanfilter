@@ -13,8 +13,8 @@ class KalmanFilter:
 
     def __init__(
         self,
-        process_noise_covariance: NDArray,
         matrix_transform: NDArray,
+        process_noise_covariance: NDArray = None,
         measurement_uncertainty: NDArray = None,
         state_transition_transform: NDArray = None,
         control_transform: NDArray = None,
@@ -50,10 +50,13 @@ class KalmanFilter:
         state_transition_transform: NDArray = None,
         control_transform: NDArray = None,
         measurement_uncertainty: NDArray = None,
+        process_noise_covariance: NDArray = None,
     ):
         self._control_input[t] = control_input
         self._observation[t] = observation
-        self._predict(t, state_transition_transform, control_transform)
+        self._predict(
+            t, state_transition_transform, control_transform, process_noise_covariance
+        )
         self._update(t, measurement_uncertainty)
         self._prev_t = t
 
@@ -62,12 +65,15 @@ class KalmanFilter:
         t: datetime = datetime.now(),
         state_transition_transform: NDArray = None,
         control_transform: NDArray = None,
+        process_noise_covariance: NDArray = None,
     ) -> None:
         """
         Predict the state and estimate uncertainty
         """
         self._predict_state(t, state_transition_transform, control_transform)
-        self._predict_uncertainty(t, state_transition_transform)
+        self._predict_uncertainty(
+            t, state_transition_transform, process_noise_covariance
+        )
 
     def _predict_state(
         self,
@@ -97,6 +103,7 @@ class KalmanFilter:
         self,
         t: datetime,
         state_transition_transform: NDArray = None,
+        process_noise_covariance: NDArray = None,
     ) -> None:
         """
         Extrapolate the uncertainty of the system at time t
@@ -106,11 +113,16 @@ class KalmanFilter:
             if state_transition_transform is not None
             else self._state_transition_transform
         )
+        process_noise_covariance = (
+            process_noise_covariance
+            if process_noise_covariance is not None
+            else self._process_noise_covariance
+        )
         self._estimate_uncertainty_pred[t] = (
             state_transform
             @ self._estimate_uncertainty[self._prev_t]
             @ state_transform.T
-            + self._process_noise_covariance
+            + process_noise_covariance
         )
 
     def _update(
