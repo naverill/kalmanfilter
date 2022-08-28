@@ -30,6 +30,8 @@ from estimators.visualise import (
     plot_uncertainty_timeseries,
 )
 
+random.seed(3333)
+
 ABS_PATH = Path(__file__).parent.resolve()
 G = 9.81
 
@@ -140,7 +142,7 @@ def main():
                 ).reshape(-1, 1),
                 estimate_uncertainty=np.diag(
                     [
-                        1000,
+                        500,
                     ]
                     * 18
                 ),
@@ -240,7 +242,7 @@ def main():
         )
         process_noise_covariance = (
             state_transition
-            @ np.diag([1e-5] * 6 + [1] * 3 + [1e-5] * 9)
+            @ np.diag([0] * 6 + [1] * 3 + [0] * 9)
             @ state_transition.T
             * accel_sensor.maximum_range
         )
@@ -277,35 +279,35 @@ def plot_state(kf: KalmanFilter, waypoints: dict[datetime, Measurement]):
     gain: NDArray = kf.gain_history
     observations: NDArray = kf.observation_history
 
-    if False:
-        fields = [
-            "X",
-            "Y",
-            "Z",
-            "VX",
-            "VY",
-            "VZ",
-            "AX",
-            "AY",
-            "AZ",
-            "Roll",
-            "Pitch",
-            "Yaw",
-            "Roll Rate",
-            "Pitch Rate",
-            "Yaw Rate",
-            "Roll Bias",
-            "Pitch Bias",
-            "Yaw Bias",
-        ]
-        for i, val in enumerate(fields):
-            plot_uncertainty_timeseries(
-                time,
-                state=state[:, i],
-                uncertainty=uncertainty[:, i],
-                title=f"{val} Uncertainty over time",
-            )
+    fields = [
+        "X",
+        "Y",
+        "Z",
+        "VX",
+        "VY",
+        "VZ",
+        "AX",
+        "AY",
+        "AZ",
+        "Roll",
+        "Pitch",
+        "Yaw",
+        "Roll Rate",
+        "Pitch Rate",
+        "Yaw Rate",
+        "Roll Bias",
+        "Pitch Bias",
+        "Yaw Bias",
+    ]
+    for i, val in enumerate(fields):
+        plot_uncertainty_timeseries(
+            time,
+            state=state[:, i],
+            uncertainty=uncertainty[:, i],
+            title=f"{val} Uncertainty over time",
+        )
 
+    if False:
         plot_2d_timeseries(
             time,
             x=observations[:, 0],
