@@ -7,10 +7,14 @@ from plotly.subplots import make_subplots
 
 def plot_3d_timeseries(
     time: list[datetime],
+    title: str,
     x: NDArray,
     y: NDArray,
     z: NDArray,
-    title: str,
+    x_true: NDArray = None,
+    y_true: NDArray = None,
+    z_true: NDArray = None,
+    scene: dict = None,
 ):
     fig = go.Figure(
         data=[
@@ -30,10 +34,22 @@ def plot_3d_timeseries(
             )
         ],
     )
+    fig.add_trace(
+        go.Scatter3d(
+            x=x_true,
+            y=y_true,
+            z=z_true,
+            marker=dict(
+                size=8,
+                cmax=39,
+                cmin=0,
+                color="Black",
+            ),
+        )
+    )
+
     fig.update_layout(
-        height=1200,
-        width=1600,
-        title_text=title,
+        height=1200, width=1600, title_text=title, title_x=0.5, scene=scene
     )
     fig.show()
 
@@ -62,5 +78,5 @@ def plot_uncertainty_timeseries(
 
     fig.add_trace(go.Scatter(x=time, y=uncertainty), row=2, col=1)
 
-    fig.update_layout(height=1200, width=1600, title_text=title)
+    fig.update_layout(height=1200, width=1600, title_text=title, title_x=0.5)
     fig.show()

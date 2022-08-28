@@ -87,14 +87,13 @@ def filter_accelation(
 
 
 def main():
-    fdir = f"{ABS_PATH}/../../data/indoor_robot/"
+    fdir = f"{ABS_PATH}/../../data/indoor_robot/train/"
     config_file = "sensor_config.txt"
     files = [f for f in os.listdir(fdir) if f != config_file]
+    fpath = fdir + random.choice(files)
 
     sensors = generate_sensors(fdir + config_file)
-    waypoints, time = generate_environment(
-        file_path=fdir + random.choice(files), sensors=sensors
-    )
+    waypoints, time = generate_environment(file_path=fpath, sensors=sensors)
     start_pos = (
         waypoints[time[0]] if waypoints.get(time[0]) else Waypoint(time[0], 0, 0)
     )
@@ -181,7 +180,7 @@ def main():
                     0,
                     0,
                     0,
-                ],  # x
+                ],
                 [
                     0,
                     1,
@@ -201,7 +200,7 @@ def main():
                     0,
                     0,
                     0,
-                ],  # y
+                ],
                 [
                     0,
                     0,
@@ -221,7 +220,7 @@ def main():
                     0,
                     0,
                     0,
-                ],  # z
+                ],
                 [0, 0, 0, 1, 0, 0, dt, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],  # vx
                 [0, 0, 0, 0, 1, 0, 0, dt, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],  # vy
                 [0, 0, 0, 0, 0, 1, 0, 0, dt, 0, 0, 0, 0, 0, 0, 0, 0, 0],  # vz
@@ -268,10 +267,10 @@ def main():
         )
         prev_t = t
 
-    plot_state(kf)
+    plot_state(kf, waypoints)
 
 
-def plot_state(kf: KalmanFilter):
+def plot_state(kf: KalmanFilter, waypoints: dict[datetime, Measurement]):
     time: list[datetime] = kf.timesteps
     state: NDArray = kf.state_history
     uncertainty: NDArray = kf.uncertainty_history
@@ -328,15 +327,19 @@ def plot_state(kf: KalmanFilter):
             z=state[:, 8],
             title="Filtered Acceleration over time",
         )
+        plot_3d_timeseries(
+            time, gain[:, 6, 0], gain[:, 7, 1], gain[:, 8, 2], "Kalman Gain over time"
+        )
     plot_3d_timeseries(
         time,
         x=state[:, 0],
         y=state[:, 1],
         z=state[:, 2],
+        x_true=[waypoint.x for waypoint in waypoints.values()],
+        y_true=[waypoint.y for waypoint in waypoints.values()],
+        z_true=[waypoint.z for waypoint in waypoints.values()],
         title="Position over time",
-    )
-    plot_3d_timeseries(
-        time, gain[:, 6, 0], gain[:, 7, 1], gain[:, 8, 2], "Kalman Gain over time"
+        scene=dict(zaxis=dict(range=[-10, 10])),
     )
     return
 

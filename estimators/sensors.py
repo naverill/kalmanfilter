@@ -49,14 +49,14 @@ class MeasurementUncalibrated(Measurement):
         x: float,
         y: float,
         z: float,
-        x_corrected: float,
-        y_corrected: float,
-        z_corrected: float,
-        accuracy: float,
+        x_corrected: float = None,
+        y_corrected: float = None,
+        z_corrected: float = None,
+        accuracy: float = None,
     ):
-        self._x_corrected = float(x_corrected)
-        self._y_corrected = float(y_corrected)
-        self._z_corrected = float(z_corrected)
+        self._x_corrected = float(x_corrected) if x_corrected is not None else None
+        self._y_corrected = float(y_corrected) if y_corrected is not None else None
+        self._z_corrected = float(z_corrected) if z_corrected is not None else None
         self._matrix_corrected = None
         self._matrix_full = None
         super().__init__(timestamp, x, y, z, accuracy)
@@ -125,14 +125,14 @@ class Sensor:
         x: float,
         y: float,
         z: float,
-        accuracy: float,
+        accuracy: float = None,
     ):
         self._measurements[timestamp] = Measurement(
             timestamp,
             x,
             y,
             z,
-            float(accuracy),
+            accuracy,
         )
 
     def poll(self, timestamp: datetime) -> Measurement:
@@ -168,10 +168,10 @@ class SensorUncalibrated(Sensor):
         x: float,
         y: float,
         z: float,
-        x_corrected: float,
-        y_corrected: float,
-        z_corrected: float,
-        accuracy: float,
+        x_corrected: float = None,
+        y_corrected: float = None,
+        z_corrected: float = None,
+        accuracy: float = None,
     ):
         self._measurements[timestamp] = MeasurementUncalibrated(
             timestamp,
