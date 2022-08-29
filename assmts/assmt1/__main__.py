@@ -30,10 +30,23 @@ from estimators.visualise import (
     plot_uncertainty_timeseries,
 )
 
-random.seed(3333)
+# random.seed(3333)
 
 ABS_PATH = Path(__file__).parent.resolve()
 G = 9.81
+
+
+def generate_body_estimates(accel: Measurement, mag: Measurement):
+    r_est = np.arctan2(accel.y, np.sqrt(accel.x**2 + accel.z**2))
+    p_est = np.arctan2(accel.x, np.sqrt(accel.y**2 + accel.z**2))
+    body_rot_x = np.array(
+        [np.cos(p_est), np.sin(r_est) * np.sin(p_est), np.cos(r_est) * np.sin(p_est)]
+    )
+    mag_x = body_rot_x @ np.array([mag.x, mag.y, mag.z])
+    body_rot_y = np.array([0, np.cos(r_est), np.sin(r_est)])
+    mag_y = body_rot_y @ np.array([mag.x, mag.y, mag.z])
+    y_est = np.arctan2(-mag_y, mag_x)
+    return r_est, p_est, y_est
 
 
 def generate_euler_rates(
@@ -102,6 +115,7 @@ def main():
 
     accel_sensor = sensors["accelerometer"]
     gyro_sensor = sensors["gyroscope"]
+    mag_sensor = sensors["magnetometer"]
 
     matrix_transform = np.array(
         [
@@ -111,6 +125,7 @@ def main():
             [0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0],  # az
             [0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0],  # r
             [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0],  # p
+            [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0],  # y
             [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0],  # vr
             [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0],  # vp
             [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0],  # vy
@@ -124,9 +139,11 @@ def main():
     gravity = Measurement(time[0], 0, 0, G)
     prev_t = None
     for t in time:
-        if (accel_t := accel_sensor.poll(t)) is None or (
-            gyro_t := gyro_sensor.poll(t)
-        ) is None:
+        if (
+            (accel_t := accel_sensor.poll(t)) is None
+            or (gyro_t := gyro_sensor.poll(t)) is None
+            or (mag_t := mag_sensor.poll(t)) is None
+        ):
             continue
 
         lin_accel_t, gravity = filter_accelation(t, gravity, accel_t)
@@ -154,8 +171,7 @@ def main():
         dt = (t - prev_t).total_seconds()
 
         # get estimates for roll and pitch
-        r_est = np.arctan2(accel_t.y, np.sqrt(accel_t.x**2 + accel_t.z**2))
-        p_est = np.arctan2(accel_t.x, np.sqrt(accel_t.y**2 + accel_t.z**2))
+        r_est, p_est, y_est = generate_body_estimates(accel_t, mag_t)
         euler_rates = generate_euler_rates(t, r_est, p_est, gyro_t)
         control_input = np.array([0]).reshape(-1, 1)
         control_transform = np.array([0] * 18).reshape(-1, 1)
@@ -249,13 +265,13 @@ def main():
         observation = np.vstack(
             [
                 np.array(
-                    [lin_accel_t.x, lin_accel_t.y, lin_accel_t.z, r_est, p_est]
+                    [lin_accel_t.x, lin_accel_t.y, lin_accel_t.z, r_est, p_est, y_est]
                 ).reshape(-1, 1),
                 euler_rates,
             ]
         )
         observation_uncertainty = np.diag(
-            [accel_sensor.maximum_range] * 5 + [gyro_sensor.maximum_range] * 3
+            [accel_sensor.maximum_range] * 6 + [gyro_sensor.maximum_range] * 3
         )
 
         kf.run(
