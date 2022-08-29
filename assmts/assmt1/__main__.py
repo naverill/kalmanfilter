@@ -31,7 +31,6 @@ from estimators.visualise import (
 )
 
 # random.seed(3333)
-
 ABS_PATH = Path(__file__).parent.resolve()
 G = 9.81
 
@@ -245,9 +244,9 @@ def main():
                 [0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],  # ax
                 [0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],  # ay
                 [0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0],  # az
-                [0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, dt, 0, 0, -dt, 0, 0],  # r
-                [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, dt, 0, 0, -dt, 0],  # p
-                [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, dt, 0, 0, -dt],  # y
+                [0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, dt, 0, 0, -1, 0, 0],  # r
+                [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, dt, 0, 0, -1, 0],  # p
+                [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, dt, 0, 0, -1],  # y
                 [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0],  # vr
                 [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0],  # vp
                 [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0],  # vy
@@ -258,10 +257,23 @@ def main():
         )
         process_noise_covariance = (
             state_transition
-            @ np.diag([0] * 6 + [1] * 3 + [0] * 9)
+            @ np.diag(
+                np.hstack(
+                    [
+                        np.diag(accel_sensor.covariance),
+                        np.diag(accel_sensor.covariance),
+                        np.diag(accel_sensor.covariance),
+                        np.diag(gyro_sensor.covariance),
+                        np.diag(gyro_sensor.covariance)[:2],
+                        np.diag(mag_sensor.covariance)[2:],
+                        np.diag(gyro_sensor.covariance)[:2],
+                        np.diag(mag_sensor.covariance)[2:],
+                    ]
+                )
+            )
             @ state_transition.T
-            * accel_sensor.maximum_range
         )
+
         observation = np.vstack(
             [
                 np.array(
@@ -271,7 +283,7 @@ def main():
             ]
         )
         observation_uncertainty = np.diag(
-            [accel_sensor.maximum_range] * 6 + [gyro_sensor.maximum_range] * 3
+            [accel_sensor.maximum_range] * 3 + [gyro_sensor.maximum_range] * 6
         )
 
         kf.run(
@@ -288,13 +300,27 @@ def main():
     plot_state(kf, waypoints)
 
 
-def plot_state(kf: KalmanFilter, waypoints: dict[datetime, Measurement]):
+def plot_state(
+    kf: KalmanFilter,
+    waypoints: dict[datetime, Measurement] = {},
+):
     time: list[datetime] = kf.timesteps
     state: NDArray = kf.state_history
     uncertainty: NDArray = kf.uncertainty_history
     gain: NDArray = kf.gain_history
     observations: NDArray = kf.observation_history
 
+    plot_3d_timeseries(
+        time,
+        x=state[:, 0],
+        y=state[:, 1],
+        z=state[:, 2],
+        x_true=[waypoint.x for waypoint in waypoints.values()],
+        y_true=[waypoint.y for waypoint in waypoints.values()],
+        z_true=[waypoint.z for waypoint in waypoints.values()],
+        title="Position over time",
+        scene=dict(zaxis=dict(range=[-10, 10])),
+    )
     fields = [
         "X",
         "Y",
@@ -323,43 +349,33 @@ def plot_state(kf: KalmanFilter, waypoints: dict[datetime, Measurement]):
             title=f"{val} Uncertainty over time",
         )
 
-    if False:
-        plot_2d_timeseries(
-            time,
-            x=observations[:, 0],
-            y=observations[:, 1],
-            z=observations[:, 2],
-            title="Linear Acceleration over time",
-        )
-        plot_2d_timeseries(
-            time,
-            x=state[:, 3],
-            y=state[:, 4],
-            z=state[:, 5],
-            title="Filtered Velocity over time",
-        )
-        plot_2d_timeseries(
-            time,
-            x=state[:, 6],
-            y=state[:, 7],
-            z=state[:, 8],
-            title="Filtered Acceleration over time",
-        )
-        plot_3d_timeseries(
-            time, gain[:, 6, 0], gain[:, 7, 1], gain[:, 8, 2], "Kalman Gain over time"
-        )
-    plot_3d_timeseries(
+    plot_2d_timeseries(
         time,
-        x=state[:, 0],
-        y=state[:, 1],
-        z=state[:, 2],
-        x_true=[waypoint.x for waypoint in waypoints.values()],
-        y_true=[waypoint.y for waypoint in waypoints.values()],
-        z_true=[waypoint.z for waypoint in waypoints.values()],
-        title="Position over time",
-        scene=dict(zaxis=dict(range=[-10, 10])),
+        x=state[:, 9],
+        y=state[:, 10],
+        z=state[:, 11],
+        x_obs=observations[:, 3],
+        y_obs=observations[:, 4],
+        z_obs=observations[:, 5],
+        title="Euler angles over time",
     )
-    return
+    plot_2d_timeseries(
+        time,
+        x=state[:, 12],
+        y=state[:, 13],
+        z=state[:, 14],
+        x_obs=observations[:, 6],
+        y_obs=observations[:, 7],
+        z_obs=observations[:, 8],
+        title="Euler Rates over time",
+    )
+    plot_3d_timeseries(
+        time=time,
+        x=gain[:, 6, 0],
+        y=gain[:, 7, 1],
+        z=gain[:, 8, 2],
+        title="Euler angle kalman gain over time",
+    )
 
 
 main()

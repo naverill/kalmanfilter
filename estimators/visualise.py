@@ -55,15 +55,31 @@ def plot_3d_timeseries(
 
 
 def plot_2d_timeseries(
-    time: list[datetime], x: NDArray, y: NDArray, z: NDArray, title: str
+    time: list[datetime],
+    title: str,
+    x: NDArray,
+    y: NDArray,
+    z: NDArray,
+    x_obs: NDArray = [],
+    y_obs: NDArray = [],
+    z_obs: NDArray = [],
 ):
     fig = make_subplots(rows=3, cols=1, subplot_titles=("X", "Y", "Z"))
 
-    fig.add_trace(go.Scatter(x=time, y=x), row=1, col=1)
+    fig.add_trace(
+        go.Scatter(x=time, y=x_obs, mode="markers", name="Observed"), row=1, col=1
+    )
+    fig.add_trace(go.Scatter(x=time, y=x, name="Filtered"), row=1, col=1)
 
-    fig.add_trace(go.Scatter(x=time, y=y), row=2, col=1)
+    fig.add_trace(
+        go.Scatter(x=time, y=y_obs, mode="markers", name="Observed"), row=2, col=1
+    )
+    fig.add_trace(go.Scatter(x=time, y=y, name="Filtered"), row=2, col=1)
 
-    fig.add_trace(go.Scatter(x=time, y=z), row=3, col=1)
+    fig.add_trace(
+        go.Scatter(x=time, y=z_obs, mode="markers", name="Observed"), row=3, col=1
+    )
+    fig.add_trace(go.Scatter(x=time, y=z, name="Filtered"), row=3, col=1)
 
     fig.update_layout(height=1200, width=1600, title_text=title)
     fig.show()
