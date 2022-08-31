@@ -35,7 +35,13 @@ ABS_PATH = Path(__file__).parent.resolve()
 G = 9.81
 
 
-def generate_body_estimates(accel: Measurement, mag: Measurement):
+def generate_body_estimates(time: datetime, accel: Measurement, mag: Measurement):
+    """
+    Generate pose estimate
+
+    Returns:
+        (roll, pitch, yaw)
+    """
     r_est = np.arctan2(accel.y, np.sqrt(accel.x**2 + accel.z**2))
     p_est = np.arctan2(accel.x, np.sqrt(accel.y**2 + accel.z**2))
     body_rot_x = np.array(
@@ -45,37 +51,43 @@ def generate_body_estimates(accel: Measurement, mag: Measurement):
     body_rot_y = np.array([0, np.cos(r_est), np.sin(r_est)])
     mag_y = body_rot_y @ np.array([mag.x, mag.y, mag.z])
     y_est = np.arctan2(-mag_y, mag_x)
-    return r_est, p_est, y_est
+    return Measurement(time, r_est, p_est, y_est)
 
 
 def generate_euler_rates(
     time: datetime,
-    r_est: float,
-    p_est: float,
+    pose_est: Measurement,
     gyro: Measurement,
 ) -> np.array:
     """
     control vector is  euler angle velocities of the IMU in world frame
 
-    pitch, roll estimation:
-    https://escholarship.org/content/qt5rs5t0sf/qt5rs5t0sf_noSplash_e1588dedf177d86a3652374bc997314f.pdf
+    body rate to euler rate transformation
 
-    body rate to euler transformation:
-    https://au.mathworks.com/help/aeroblks/customvariablemass6dofeulerangles.html
+    Returns:
+        (roll rate, pitch rate, yaw rate)
     """
     # calculate rate of change of euler angles
     R = np.array(
         [
-            [1, np.sin(r_est) * np.tan(p_est), np.cos(r_est) * np.tan(p_est)],
-            [0, np.cos(p_est), -np.sin(p_est)],
-            [0, np.sin(p_est) / np.cos(r_est), np.cos(p_est) / np.cos(r_est)],
+            [
+                1,
+                np.sin(pose_est.x) * np.tan(pose_est.y),
+                np.cos(pose_est.x) * np.tan(pose_est.y),
+            ],
+            [0, np.cos(pose_est.y), -np.sin(pose_est.y)],
+            [
+                0,
+                np.sin(pose_est.y) / np.cos(pose_est.x),
+                np.cos(pose_est.y) / np.cos(pose_est.x),
+            ],
         ]
     )
     euler_rate = R @ np.array([gyro.x, gyro.y, gyro.z]).reshape(-1, 1)
-    return euler_rate
+    return Measurement(time, euler_rate[0], euler_rate[1], euler_rate[2])
 
 
-def filter_accelation(
+def filter_acceleration(
     timestep: datetime, gravity: Measurement, accel: Measurement, alpha: float = 0.8
 ) -> [Measurement, Measurement]:
     """
@@ -145,7 +157,7 @@ def main():
         ):
             continue
 
-        lin_accel_t, gravity = filter_accelation(t, gravity, accel_t)
+        lin_accel_t, gravity = filter_acceleration(t, gravity, accel_t)
 
         if first_iter:
             kf.init_state(
@@ -170,8 +182,8 @@ def main():
         dt = (t - prev_t).total_seconds()
 
         # get estimates for roll and pitch
-        r_est, p_est, y_est = generate_body_estimates(accel_t, mag_t)
-        euler_rates = generate_euler_rates(t, r_est, p_est, gyro_t)
+        pose_est = generate_body_estimates(t, accel_t, mag_t)
+        rot_rate_est = generate_euler_rates(t, pose_est, gyro_t)
         control_input = np.array([0]).reshape(-1, 1)
         control_transform = np.array([0] * 18).reshape(-1, 1)
 
@@ -274,14 +286,19 @@ def main():
             @ state_transition.T
         )
 
-        observation = np.vstack(
+        observation = np.array(
             [
-                np.array(
-                    [lin_accel_t.x, lin_accel_t.y, lin_accel_t.z, r_est, p_est, y_est]
-                ).reshape(-1, 1),
-                euler_rates,
+                lin_accel_t.x,
+                lin_accel_t.y,
+                lin_accel_t.z,
+                pose_est.x,
+                pose_est.y,
+                pose_est.z,
+                rot_rate_est.x,
+                rot_rate_est.y,
+                rot_rate_est.z,
             ]
-        )
+        ).reshape(-1, 1)
         observation_uncertainty = np.diag(
             [accel_sensor.maximum_range] * 3 + [gyro_sensor.maximum_range] * 6
         )
