@@ -48,9 +48,7 @@ def plot_3d_timeseries(
         )
     )
 
-    fig.update_layout(
-        height=1200, width=1600, title_text=title, title_x=0.5, scene=scene
-    )
+    fig.update_layout(title_text=title, title_x=0.5, scene=scene)
     fig.show()
 
 
@@ -81,7 +79,7 @@ def plot_2d_timeseries(
     )
     fig.add_trace(go.Scatter(x=time, y=z, name="Filtered"), row=3, col=1)
 
-    fig.update_layout(height=1200, width=1600, title_text=title)
+    fig.update_layout(title_text=title, title_x=0.5)
     fig.show()
 
 
@@ -94,5 +92,5 @@ def plot_uncertainty_timeseries(
 
     fig.add_trace(go.Scatter(x=time, y=uncertainty), row=2, col=1)
 
-    fig.update_layout(height=1200, width=1600, title_text=title, title_x=0.5)
+    fig.update_layout(title_text=title, title_x=0.5)
     fig.show()
