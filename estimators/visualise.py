@@ -40,7 +40,7 @@ def plot_3d_timeseries(
             y=y_true,
             z=z_true,
             marker=dict(
-                size=8,
+                size=3,
                 cmax=39,
                 cmin=0,
                 color="Black",

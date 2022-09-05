@@ -89,13 +89,8 @@ class MeasurementUncalibrated(Measurement):
 
 
 class Waypoint(Measurement):
-    def __init__(
-        self,
-        timestamp: datetime,
-        x: float,
-        y: float,
-    ):
-        super().__init__(timestamp, x, y, 0, 3)
+    def __init__(self, timestamp: datetime, x: float, y: float, z: float = 0):
+        super().__init__(timestamp, x, y, z, 3)
 
 
 class Sensor:
@@ -199,6 +194,16 @@ class SensorUncalibrated(Sensor):
                 np.hstack([m.matrix_full for m in self._measurements.values()])
             )
         return self._covariance_full
+
+
+class GPS(Sensor):
+    """
+    x: GPS position along the x axis
+    y: GPS position along the y axis
+    z: GPS position along the z axis
+    """
+
+    pass
 
 
 class Accelerometer(Sensor):
